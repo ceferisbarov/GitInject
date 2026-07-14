@@ -1,0 +1,10 @@
+{
+    "name": "Daily Malicious Code Scan",
+    "description": "Security scan that reviews code changes for suspicious patterns indicating malicious activity.",
+    "category": "security-compliance",
+    "provider": "github-copilot",
+    "source": "https://github.com/githubnext/agentics/blob/main/workflows/daily-malicious-code-scan.md",
+    "defense_level": "baseline",
+    "labels": ["security", "malware-scan", "supply-chain", "copilot"],
+    "supported_events": ["schedule", "workflow_dispatch"]
+}

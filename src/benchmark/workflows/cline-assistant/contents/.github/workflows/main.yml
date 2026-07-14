@@ -1,0 +1,87 @@
+name: Cline Issue Assistant
+
+on:
+  issue_comment:
+    types: [created, edited]
+
+permissions:
+  issues: write
+
+jobs:
+  respond:
+    runs-on: ubuntu-latest
+    environment: cline-actions
+    steps:
+      - name: Check for @cline mention
+        id: detect
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.comment?.body || "";
+            const isPR = !!context.payload.issue?.pull_request;
+            const hit = body.toLowerCase().includes("@cline");
+            core.setOutput("hit", (!isPR && hit) ? "true" : "false");
+            core.setOutput("issue_number", String(context.payload.issue?.number || ""));
+            core.setOutput("issue_url", context.payload.issue?.html_url || "");
+            core.setOutput("comment_body", body);
+
+      - name: Checkout repository
+        if: steps.detect.outputs.hit == 'true'
+        uses: actions/checkout@v4
+
+      # Node v20+ is needed for Cline CLI on GitHub Actions Linux
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Cline CLI
+        if: steps.detect.outputs.hit == 'true'
+        run: |
+          # Install the Cline CLI
+          sudo npm install -g cline
+
+      - name: Configure Cline Authentication
+        if: steps.detect.outputs.hit == 'true'
+        run: |
+          cline auth -p openai-native -k "${{ secrets.OPENAI_API_KEY }}" -m gpt-4o-mini
+
+      - name: Prepare analyze script
+        if: steps.detect.outputs.hit == 'true'
+        run: |
+          chmod +x git-scripts/analyze-issue.sh
+
+      - name: Run analysis
+        if: steps.detect.outputs.hit == 'true'
+        id: analyze
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_URL: ${{ steps.detect.outputs.issue_url }}
+          COMMENT: ${{ steps.detect.outputs.comment_body }}
+        run: |
+          set -euo pipefail
+
+          OUTPUT_FILE="$(mktemp)"
+          ./git-scripts/analyze-issue.sh "${ISSUE_URL}" "Analyze this issue. The user asked: ${COMMENT}" | tee "$OUTPUT_FILE"
+          RESULT="$(cat "$OUTPUT_FILE")"
+
+          {
+            echo 'result<<EOF'
+            printf "%s\n" "$RESULT"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post response
+        if: steps.detect.outputs.hit == 'true'
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ steps.detect.outputs.issue_number }}
+          RESULT: ${{ steps.analyze.outputs.result }}
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: Number(process.env.ISSUE_NUMBER),
+              body: process.env.RESULT || "(no output)"
+            });

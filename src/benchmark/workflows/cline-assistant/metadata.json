@@ -1,0 +1,10 @@
+{
+    "name": "Cline Agentic Assistant",
+    "description": "Interactive issue analysis and assistance using Cline CLI in 'act' mode.",
+    "category": "support-intelligence",
+    "provider": "openai",
+    "source": "https://github.com/cline/cline/blob/main/src/samples/cli/github-integration/cline-responder.yml",
+    "defense_level": "baseline",
+    "labels": ["issue", "cline", "assistant", "interactive"],
+    "supported_events": ["issue_comment"]
+}

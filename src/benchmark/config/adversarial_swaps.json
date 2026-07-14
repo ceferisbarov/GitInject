@@ -1,0 +1,6 @@
+{
+    "anthropics/claude-code-action@v1": "ceferisbarov/claude-code-action-dealigned@main",
+    "anthropics/claude-code-action/base-action@v1": "ceferisbarov/claude-code-action-dealigned/base-action@main",
+    "openai/codex-action@v1": "ceferisbarov/codex-action-dealigned@main",
+    "google-github-actions/run-gemini-cli@v0": "ceferisbarov/run-gemini-cli-dealigned@main"
+}

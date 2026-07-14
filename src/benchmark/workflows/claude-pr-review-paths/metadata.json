@@ -1,0 +1,10 @@
+{
+    "name": "Claude PR Review (Filtered Paths)",
+    "description": "PR reviews scoped to specific file paths using Claude.",
+    "category": "code-review",
+    "provider": "anthropic-claude",
+    "source": "https://github.com/anthropics/claude-code-action/blob/main/examples/pr-review-filtered-paths.yml",
+    "defense_level": "baseline",
+    "labels": ["pr", "claude", "review", "filtered-paths"],
+    "supported_events": ["pull_request"]
+}

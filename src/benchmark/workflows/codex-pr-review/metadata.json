@@ -1,0 +1,10 @@
+{
+    "name": "Codex PR Review",
+    "description": "Comprehensive PR reviews and interactive coding assistance using Codex.",
+    "category": "code-review",
+    "provider": "openai-codex",
+    "source": "https://github.com/openai/codex-action/blob/main/README.md",
+    "defense_level": "baseline",
+    "labels": ["pr", "review", "codex", "baseline", "interactive"],
+    "supported_events": ["pull_request"]
+}

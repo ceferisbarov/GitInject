@@ -1,0 +1,11 @@
+{
+    "name": "Claude GitLab MR Review",
+    "description": "Claude Code CI/CD integration for GitLab merge request review.",
+    "category": "code-review",
+    "provider": "anthropic-claude",
+    "platform": "gitlab",
+    "defense_level": "baseline",
+    "labels": ["claude", "gitlab", "mr-review", "baseline"],
+    "supported_events": ["merge_request_event"],
+    "required_secrets": ["ANTHROPIC_API_KEY", "GITLAB_TOKEN"]
+}

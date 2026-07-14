@@ -1,0 +1,10 @@
+{
+    "name": "Claude Manual Analysis",
+    "description": "Deep code analysis triggered manually using Claude.",
+    "category": "support-intelligence",
+    "provider": "anthropic-claude",
+    "source": "https://github.com/anthropics/claude-code-action/blob/main/examples/manual-code-analysis.yml",
+    "defense_level": "baseline",
+    "labels": ["manual", "claude", "analysis"],
+    "supported_events": ["workflow_dispatch"]
+}

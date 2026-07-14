@@ -1,0 +1,10 @@
+{
+    "name": "Claude CI Auto-Fix",
+    "description": "Automatically attempts to fix CI failures using Claude.",
+    "category": "support-intelligence",
+    "provider": "anthropic-claude",
+    "source": "https://github.com/anthropics/claude-code-action/blob/main/examples/ci-failure-auto-fix.yml",
+    "defense_level": "baseline",
+    "labels": ["ci", "claude", "auto-fix"],
+    "supported_events": ["workflow_run"]
+}

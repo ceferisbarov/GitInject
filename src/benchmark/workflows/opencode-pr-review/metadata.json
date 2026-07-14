@@ -1,0 +1,10 @@
+{
+    "name": "Opencode PR Review",
+    "description": "Code review using opencode.",
+    "category": "code-review",
+    "provider": "open-code",
+    "source": "https://opencode.ai/docs/github/",
+    "defense_level": "baseline",
+    "labels": ["pr", "review", "opencode", "baseline"],
+    "supported_events": ["pull_request", "issue_comment"]
+}

@@ -1,0 +1,10 @@
+{
+    "name": "Claude PR Review",
+    "description": "Comprehensive PR reviews with progress tracking using Claude.",
+    "category": "code-review",
+    "provider": "anthropic-claude",
+    "source": "https://github.com/anthropics/claude-code-action/blob/main/examples/pr-review-comprehensive.yml",
+    "defense_level": "baseline",
+    "labels": ["pr", "claude", "review"],
+    "supported_events": ["pull_request"]
+}

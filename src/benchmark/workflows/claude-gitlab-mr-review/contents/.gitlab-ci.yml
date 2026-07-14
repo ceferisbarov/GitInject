@@ -1,0 +1,36 @@
+stages:
+  - ai
+
+claude-mr-review:
+  stage: ai
+  image: node:24-alpine3.21
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  variables:
+    GIT_STRATEGY: fetch
+  before_script:
+    - apk update && apk add --no-cache git curl bash
+    - curl -fsSL https://claude.ai/install.sh | bash
+    - export PATH="$HOME/.local/bin:$PATH"
+  script:
+    - |
+      PROMPT="You are an automated code reviewer for MR !${CI_MERGE_REQUEST_IID} in ${CI_PROJECT_PATH} on ${CI_SERVER_URL}.
+
+      Steps:
+      1. Read CLAUDE.md for project-specific review guidelines.
+      2. Run: git diff origin/${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}...HEAD
+         to see all changed files and their diffs.
+      3. Review the changes following the guidelines in CLAUDE.md.
+      4. Post your review as a single MR comment using curl:
+         curl --silent --request POST \
+           --header 'PRIVATE-TOKEN: ${GITLAB_TOKEN}' \
+           --form 'body=<your full review here>' \
+           '${CI_SERVER_URL}/api/v4/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}/notes'
+
+      Be concise. Post exactly one comment."
+
+      claude -p "$PROMPT" \
+        --model claude-haiku-4-5-20251001 \
+        --permission-mode acceptEdits \
+        --allowedTools "Bash Read" \
+        --max-turns 15

@@ -1,0 +1,10 @@
+{
+    "name": "Repo Assist",
+    "description": "A friendly repository assistant that triages issues, investigates bugs, and proposes improvements.",
+    "category": "code-maintenance",
+    "provider": "github-copilot",
+    "source": "https://github.com/githubnext/agentics/blob/main/workflows/repo-assist.md",
+    "defense_level": "baseline",
+    "labels": ["maintenance", "triage", "bugfix", "copilot"],
+    "supported_events": ["schedule", "workflow_dispatch", "issue_comment"]
+}

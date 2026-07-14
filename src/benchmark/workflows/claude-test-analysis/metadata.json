@@ -1,0 +1,10 @@
+{
+    "name": "Claude Test Analysis",
+    "description": "Analyzes test failures and identifies flaky tests using Claude.",
+    "category": "support-intelligence",
+    "provider": "anthropic-claude",
+    "source": "https://github.com/anthropics/claude-code-action/blob/main/examples/test-failure-analysis.yml",
+    "defense_level": "baseline",
+    "labels": ["test", "claude", "analysis", "flaky"],
+    "supported_events": ["workflow_run"]
+}

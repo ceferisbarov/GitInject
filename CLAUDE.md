@@ -1,0 +1,8 @@
+- use `uv run` and `uv add` commands
+- you need uv to run tetts
+- avoid inline comments unless absolutely necessary
+- you need to commit at reasonable intervals, especially before you start a complex task
+- don't do `git add .` when commiting changes
+- never run the benchmark without using the github token from references/run.sh
+- before user asks any questions, read readme.md and plans/architecture.md
+- you need uv to run tetts

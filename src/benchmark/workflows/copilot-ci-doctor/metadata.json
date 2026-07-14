@@ -1,0 +1,10 @@
+{
+    "name": "CI Failure Doctor",
+    "description": "Automated CI failure investigator that analyzes failed GitHub Actions workflows to identify root causes.",
+    "category": "code-maintenance",
+    "provider": "github-copilot",
+    "source": "https://github.com/githubnext/agentics/blob/main/workflows/ci-doctor.md",
+    "defense_level": "baseline",
+    "labels": ["ci", "investigation", "failure-analysis", "copilot"],
+    "supported_events": ["workflow_run"]
+}

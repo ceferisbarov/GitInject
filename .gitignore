@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+.ruff_cache
+.pytest_cache
+references/
+plans/*
+!plans/architecture.md
+!plans/concerns.md
+!plans/scenarios.md
+notebooks/
+runs/
+actions/
+GEMINI.md
+attacks/*

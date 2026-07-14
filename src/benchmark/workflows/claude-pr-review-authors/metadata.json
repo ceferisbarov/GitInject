@@ -1,0 +1,10 @@
+{
+    "name": "Claude PR Review (Filtered Authors)",
+    "description": "PR reviews scoped to specific authors using Claude.",
+    "category": "code-review",
+    "provider": "anthropic-claude",
+    "source": "https://github.com/anthropics/claude-code-action/blob/main/examples/pr-review-filtered-authors.yml",
+    "defense_level": "baseline",
+    "labels": ["pr", "claude", "review", "filtered-authors"],
+    "supported_events": ["pull_request"]
+}
