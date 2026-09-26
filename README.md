@@ -113,7 +113,7 @@ uv run python -m src.benchmark.cli run-suite --workflow-labels code-review --dry
 
 #### Reproduce the paper's attacks
 
-The 11 named attacks from the paper (Table 6) ship as scenarios under `src/benchmark/scenarios/malicious/`. A helper script runs each against its target workflow (credentials are read from a gitignored `references/run.sh`):
+The 11 named attacks from the paper (Table 8) ship as scenarios under `src/benchmark/scenarios/malicious/`. A helper script runs each against its target workflow (credentials are read from a gitignored `references/run.sh`):
 
 ```bash
 # Run all 11 once; set REPEAT=5 to match the paper
@@ -175,7 +175,7 @@ If you use GitInject in your research, please cite:
 ```bibtex
 @article{isbarov2026gitinject,
   title   = {GitInject: Real-World Prompt Injection Attacks in AI-Powered CI/CD Pipelines},
-  author  = {Isbarov, Jafar and Suleymanov, Umid and K\"{o}ksal, Abdullatif and Kantarcioglu, Murat},
+  author  = {Isbarov, Jafar and Suleymanov, Umid and Shumailov, Ilia and Kantarcioglu, Murat},
   journal = {arXiv preprint arXiv:2606.09935},
   year    = {2026},
   url     = {https://arxiv.org/abs/2606.09935}
