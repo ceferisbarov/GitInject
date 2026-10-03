@@ -28,7 +28,7 @@ Each run is scored on two axes:
 - **Utility**: did the agent do its job?
 - **Security**: did it resist the attack?
 
-Metrics can be `true`, `false`, or `null` (unknown). Execution and evaluation errors are reported separately, and summaries show the number of known verdicts for each metric. See [the measurement and cleanup changes](reports/step-1-implementation.md) before comparing results with older runs.
+Metrics can be `true`, `false`, or `null` (unknown). Execution and evaluation errors are reported separately, and summaries show the number of known verdicts for each metric. Review older results before combining them with new measurements.
 
 The framework ships an autonomous **Vulnerability Scanner** that turns a workflow definition into a ranked, live-confirmed attack inventory without human-authored scenarios.
 
