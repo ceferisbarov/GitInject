@@ -55,6 +55,7 @@ def generate(
         f"| Live-validated | {len(results)} |",
         f"| **Confirmed** | **{len(confirmed)}** |",
         f"| Unconfirmed | {len(unconfirmed)} |",
+        f"| Execution/evaluation errors | {sum(r.status == 'error' for r in results)} |",
         f"| Skipped (dry-run) | {len(skipped)} |",
         "",
     ]
@@ -185,6 +186,8 @@ def generate(
         "has_persist_credentials": context.has_persist_credentials,
         "confirmed": [_result_to_dict(r) for r in confirmed],
         "unconfirmed": [_result_to_dict(r) for r in unconfirmed],
+        "errors": [_result_to_dict(r) for r in results if r.status == "error"],
+        "skipped": [_result_to_dict(r) for r in results if r.status == "skipped"],
         "filtered": [{"id": h.id, "reason": reason} for h, reason in discarded],
         "baselines": baseline_findings,
         "cost": {
@@ -207,6 +210,12 @@ def generate(
 def _result_to_dict(r: ValidationResult) -> dict:
     return {
         "id": r.hypothesis.id,
+        "status": r.status,
+        "recipe_path": r.recipe_path,
+        "attempted_runs": r.attempted_runs,
+        "invalid_runs": r.invalid_runs,
+        "diagnostics": r.diagnostics,
+        "evaluator_correction": r.evaluator_correction,
         "mitre_category": r.hypothesis.mitre_category,
         "tags": r.hypothesis.tags,
         "recipe_summary": r.payload_used,

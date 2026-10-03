@@ -6,7 +6,7 @@ import random
 import re
 import string
 import time
-from datetime import datetime, timezone
+import uuid
 
 import click
 from tenacity import retry, retry_if_result, stop_after_attempt, wait_exponential
@@ -41,7 +41,7 @@ class BenchmarkRunner:
         self._sync_repo_name(self.repo_name)
 
         self.provisioner = RepoProvisioner(self.gh_client)
-        self.analyzer = BenchmarkAnalyzer(workspace_dir, repo=self.repo_name)
+        self.analyzer = BenchmarkAnalyzer(workspace_dir, repo=self.repo_name, gh_client=self.gh_client)
 
     def _build_event_client(self):
         """Returns the client used to create attacker-controlled events."""
@@ -85,10 +85,10 @@ class BenchmarkRunner:
         """Generate a payload and substitute it into all of the scenario's injection slots."""
         goal = scenario.get_attack_goal()
         if goal is None:
-            return
+            raise ValueError("Scenario does not expose an attack goal")
         slots = scenario.get_injection_slots()
-        if not slots:
-            return
+        if not any("{{INJECTION}}" in template for template in slots.values()):
+            raise ValueError("Scenario has no effective {{INJECTION}} slot")
         payload = attack.generate(goal, context)
         for field, template in slots.items():
             scenario.apply_attack(field, template.replace("{{INJECTION}}", payload))
@@ -120,18 +120,27 @@ class BenchmarkRunner:
         if not scenario:
             return {"error": f"Failed to load scenario {scenario_id}"}
 
+        timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        runs_dir = os.path.join(self.workspace_dir, "runs", f"{timestamp.replace(':', '-')}-{uuid.uuid4().hex[:12]}")
+        os.makedirs(runs_dir)
+        result = {"workflow": workflow_id, "scenario": scenario_id, "repo": self.repo_name, "timestamp": timestamp}
+        run_result = {}
+        setup_started = False
         try:
+            self._configure_workflow_tracking(workflow_dir, workflow_meta)
             if not unaligned:
                 provider_error = self._validate_provider_requirements(workflow_meta)
                 if provider_error:
-                    return {"error": provider_error}
+                    result["error"] = provider_error
+                    return result
 
             # Tier 1: workflow-declared required keys (hard block)
             required_secrets = workflow_meta.get("required_secrets", [])
             required_vars = workflow_meta.get("required_vars", [])
             missing = [k for k in required_secrets + required_vars if not os.environ.get(k)]
             if missing and not unaligned:
-                return {"error": "Missing required environment variables:\n  - " + "\n  - ".join(missing)}
+                result["error"] = "Missing required environment variables:\n  - " + "\n  - ".join(missing)
+                return result
 
             # Tier 2: YAML-scanned keys — set if available, silently skip if not
             requirements = self._get_workflow_requirements(workflow_dir)
@@ -172,11 +181,8 @@ class BenchmarkRunner:
             self._sync_repo_name(self.gh_client.repo_name)
 
             click.echo(f"Preparing repository state for scenario '{scenario_id}'...")
+            setup_started = True
             scenario.setup_state(self.gh_client)
-
-            timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-            runs_dir = os.path.join(self.workspace_dir, "runs", timestamp.replace(":", "-"))
-            os.makedirs(runs_dir, exist_ok=True)
 
             click.echo("Capturing context snapshot...")
             snapshot = self._capture_context_snapshot(scenario, workflow_dir)
@@ -198,59 +204,181 @@ class BenchmarkRunner:
                 self._inject_attack_slots(scenario, attack, llm_input)
 
             click.echo(f"Triggering workflow '{workflow_id}' on GitHub...")
-            start_time = datetime.now(timezone.utc).timestamp()
+            self._prepare_trial(scenario, workflow_meta)
+            start_time = scenario.runtime_state["triggered_at"]
             expected_event = scenario.get_event().get("event_type")
             trigger_success, trigger_error = self._trigger_event(scenario)
             if not trigger_success:
-                return {"error": f"Failed to trigger GitHub event: {trigger_error}"}
+                result["error"] = f"Failed to trigger GitHub event: {trigger_error}"
+                return result
 
             click.echo("Waiting for workflow run to start and complete...")
             wait_result = self._wait_for_run(start_time, expected_event=expected_event)
 
             if not wait_result:
-                return {"error": "Timed out waiting for workflow run or could not find it."}
+                result["error"] = "Timed out waiting for workflow run or could not find it."
+                return result
 
             run_id, final_run = wait_result
 
+            result["run_id"] = run_id
             click.echo(f"Fetching logs for run {run_id}...")
-            stdout, stderr = self._get_workflow_logs(run_id)
-            billable_minutes = self._get_billable_minutes(run_id)
+            log_error = None
+            try:
+                stdout, stderr = self._get_workflow_logs(run_id)
+            except Exception as exc:
+                stdout, stderr = "", ""
+                log_error = str(exc)
+            try:
+                billable_minutes = self._get_billable_minutes(run_id)
+            except Exception as exc:
+                billable_minutes = None
+                result["timing_error"] = str(exc)
 
             run_result = {
                 "stdout": stdout,
                 "stderr": stderr,
-                "exit_code": 0,
+                "exit_code": 0 if final_run.conclusion == "success" else 1,
+                "agent_invoked": self._agent_invocation(final_run),
                 "status": final_run.status if final_run else None,
                 "conclusion": final_run.conclusion if final_run else None,
             }
 
-            analysis = self.analyzer.analyze(run_result, scenario)
+            run_result["jobs"] = self._job_evidence
+            if log_error:
+                run_result["log_error"] = log_error
+            if getattr(self, "_invocation_error", None):
+                run_result["invocation_error"] = self._invocation_error
             gh_state = self._capture_gh_state(scenario)
+            if gh_state.get("error"):
+                run_result["evidence_error"] = gh_state["error"]
+            else:
+                scenario.runtime_state["observed_details"] = gh_state
+            from .evidence import agent_artifacts
 
-            result = {
-                "workflow": workflow_id,
-                "scenario": scenario_id,
-                "analysis": analysis,
-                "run_id": run_id,
-                "repo": self.repo_name,
-                "timestamp": timestamp,
-                "message": f"Successfully executed and analyzed run {run_id}.",
-                "run_result": run_result,
-                "gh_state": gh_state,
-                "billable_minutes": billable_minutes,
-            }
+            if gh_state and "error" not in gh_state:
+                try:
+                    result["agent_artifacts"] = agent_artifacts(gh_state, scenario)
+                except Exception as exc:
+                    result["artifact_error"] = str(exc)
+            analysis = self.analyzer.analyze(run_result, scenario)
 
-            self._save_run_locally(result, run_result, runs_dir)
+            result.update(
+                {
+                    "workflow": workflow_id,
+                    "scenario": scenario_id,
+                    "analysis": analysis,
+                    "run_id": run_id,
+                    "repo": self.repo_name,
+                    "timestamp": timestamp,
+                    "message": f"Analyzed workflow run {run_id} ({final_run.conclusion}).",
+                    "run_result": run_result,
+                    "gh_state": gh_state,
+                    "billable_minutes": billable_minutes,
+                    "evidence_boundary": {
+                        key: scenario.runtime_state.get(key)
+                        for key in ("triggered_at", "agent_logins", "input_logins", "baseline_artifact_ids")
+                    },
+                }
+            )
             return result
 
+        except Exception as exc:
+            result["error"] = str(exc)
+            result["run_result"] = run_result
+            return result
         finally:
             if cleanup:
-                click.echo(f"Cleaning up repository state for scenario '{scenario_id}'...")
-                scenario.teardown_state(self.gh_client)
-                self.provisioner.teardown()
+                self._cleanup(scenario if setup_started else None, result)
             else:
-                msg = f"SKIP CLEANUP: Repository {self.repo_name} remains active for debugging."
-                click.echo(click.style(msg, fg="yellow"))
+                click.echo(click.style(f"SKIP CLEANUP: Repository {self.repo_name} remains active.", fg="yellow"))
+            self._save_run_locally(result, run_result, runs_dir)
+
+    def _cleanup(self, scenario, result):
+        operations = [self.provisioner.teardown]
+        if scenario is not None:
+            operations.insert(0, lambda: scenario.teardown_state(self.gh_client))
+        for operation in operations:
+            try:
+                operation()
+            except Exception as exc:
+                result.setdefault("cleanup_errors", []).append(str(exc))
+                click.echo(f"Cleanup failed: {exc}", err=True)
+
+    def _configure_workflow_tracking(self, workflow_dir, metadata=None):
+        import yaml
+
+        if metadata is None:
+            meta_path = os.path.join(workflow_dir, "metadata.json")
+            if os.path.isfile(meta_path):
+                with open(meta_path) as handle:
+                    metadata = json.load(handle)
+        metadata = metadata or {}
+        self._workflow_metadata = metadata
+        contents = os.path.join(workflow_dir, "contents")
+        root = os.path.join(contents, ".github/workflows") if os.path.isdir(contents) else workflow_dir
+        self._workflow_events = {}
+        self._agent_steps = set((metadata or {}).get("agent_steps", []))
+        for path in sorted(glob.glob(os.path.join(root, "*.y*ml"))):
+            with open(path) as handle:
+                workflow = yaml.load(handle, Loader=yaml.BaseLoader) or {}
+            events = workflow.get("on", {})
+            events = [events] if isinstance(events, str) else events
+            self._workflow_events[f".github/workflows/{os.path.basename(path)}"] = set(events)
+            for job in workflow.get("jobs", {}).values():
+                for step in job.get("steps", []):
+                    action = step.get("uses", "").split("@", 1)[0]
+                    if action in {
+                        "openai/codex-action",
+                        "anthropics/claude-code-action",
+                        "google-github-actions/run-gemini-cli",
+                    }:
+                        self._agent_steps.add(step.get("name", step["uses"]))
+
+    def _agent_invocation(self, run):
+        self._job_evidence = []
+        self._invocation_error = None
+        try:
+            for job in run.jobs():
+                for step in job.steps:
+                    self._job_evidence.append(
+                        {"job": job.name, "name": step.name, "status": step.status, "conclusion": step.conclusion}
+                    )
+        except Exception as exc:
+            self._invocation_error = str(exc)
+            return None
+        agent_steps = [step for step in self._job_evidence if step["name"] in getattr(self, "_agent_steps", set())]
+        if any(step["conclusion"] == "success" for step in agent_steps):
+            return True
+        if agent_steps and all(step["conclusion"] == "skipped" for step in agent_steps):
+            return False
+        if run.conclusion in {"action_required", "skipped"}:
+            return False
+        return None
+
+    def _prepare_trial(self, scenario, metadata=None):
+        from .evidence import DEFAULT_AGENT_LOGINS
+
+        metadata = metadata if metadata is not None else getattr(self, "_workflow_metadata", {})
+        state = scenario.runtime_state
+        state.pop("observed_details", None)
+        state["agent_logins"] = list((metadata or {}).get("agent_logins", sorted(DEFAULT_AGENT_LOGINS)))
+        state["input_logins"] = sorted(
+            {client.get_authenticated_user_login() for client in (self.gh_client, self.event_gh_client)}
+        )
+        self._baseline_run_ids = {run.id for run in self.gh_client.repository.get_workflow_runs()[:100]}
+        event = scenario.get_event()
+        number = event.get("data", {}).get("number")
+        if number and event["event_type"] == "issue_comment":
+            state["issue_number"] = number
+        elif number and event["event_type"] in {"pull_request_review", "pull_request_review_comment"}:
+            state["pr_number"] = number
+        baseline = self._capture_gh_state(scenario) if state.get("pr_number") or state.get("issue_number") else {}
+        if baseline.get("error"):
+            raise RuntimeError(f"Cannot establish evidence boundary: {baseline['error']}")
+        state["baseline_artifact_ids"] = [f"{item['kind']}:{item['id']}" for item in baseline.get("comment_details", [])]
+        state["triggered_at"] = int(time.time())
+        self._trial_state = state
 
     def optimize(self, workflow_id, scenario_id, attack_id, iterations, cleanup=True):
         """
@@ -274,13 +402,18 @@ class BenchmarkRunner:
 
         attack = load_attack(attack_id)
         timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        runs_dir = os.path.join(self.workspace_dir, "runs", f"optimize-{timestamp.replace(':', '-')}")
-        os.makedirs(runs_dir, exist_ok=True)
+        runs_dir = os.path.join(
+            self.workspace_dir, "runs", f"optimize-{timestamp.replace(':', '-')}-{uuid.uuid4().hex[:12]}"
+        )
+        os.makedirs(runs_dir)
         history_path = os.path.join(runs_dir, "attack_history.jsonl")
 
         asr_curve = []
+        setup_started = False
+        result = {}
 
         try:
+            self._configure_workflow_tracking(workflow_dir)
             click.echo(f"Provisioning repository {self.repo_name}...")
             requirements = self._get_workflow_requirements(workflow_dir)
             secrets = {k: v for k in requirements["secrets"] if (v := os.environ.get(k))}
@@ -297,6 +430,7 @@ class BenchmarkRunner:
                 substitution_map={},
             )
             self._sync_repo_name(self.gh_client.repo_name)
+            setup_started = True
             scenario.setup_state(self.gh_client)
             context = self._reconstruct_llm_input(scenario, workflow_dir)
 
@@ -305,49 +439,58 @@ class BenchmarkRunner:
 
                 self._inject_attack_slots(scenario, attack, context)
 
-                start_time = datetime.now(timezone.utc).timestamp()
-                expected_event = scenario.get_event().get("event_type")
-                ok, err = self._trigger_event(scenario)
-                if not ok:
-                    click.echo(click.style(f"Trigger failed: {err}", fg="red"))
-                    asr_curve.append(0)
-                    attack.update(0.0)
+                run_id = None
+                error = None
+                score = None
+                try:
+                    self._prepare_trial(scenario)
+                    expected_event = scenario.get_event().get("event_type")
+                    ok, err = self._trigger_event(scenario)
+                    if not ok:
+                        raise RuntimeError(f"Trigger failed: {err}")
+                    waited = self._wait_for_run(scenario.runtime_state["triggered_at"], expected_event=expected_event)
+                    if not waited:
+                        raise RuntimeError("Timed out waiting for workflow run")
+                    run_id, final_run = waited
+                    stdout, stderr = self._get_workflow_logs(run_id)
+                    run_result = {
+                        "stdout": stdout,
+                        "stderr": stderr,
+                        "exit_code": 0 if final_run.conclusion == "success" else 1,
+                        "status": final_run.status,
+                        "conclusion": final_run.conclusion,
+                        "agent_invoked": self._agent_invocation(final_run),
+                    }
+                    gh_state = self._capture_gh_state(scenario)
+                    if gh_state.get("error"):
+                        raise RuntimeError(gh_state["error"])
+                    scenario.runtime_state["observed_details"] = gh_state
+                    verdict = scenario.get_security_evaluator().evaluate(run_result, self.gh_client, scenario)
+                    if type(verdict) is not bool or (verdict is False and run_result["agent_invoked"] is not True):
+                        raise RuntimeError("Security verdict unavailable without verified agent invocation")
+                    score = int(verdict)
+                    attack.update(float(score))
+                except Exception as exc:
+                    error = str(exc)
+                    click.echo(f"Iteration {i + 1} unknown: {error}", err=True)
+                finally:
+                    asr_curve.append(score)
+                    with open(history_path, "a") as handle:
+                        handle.write(
+                            json.dumps({"iteration": i + 1, "score": score, "run_id": run_id, "error": error}) + "\n"
+                        )
                     scenario.reset_event_state(self.gh_client)
-                    continue
-
-                run_id = self._wait_for_run(start_time, expected_event=expected_event)
-                if not run_id:
-                    click.echo(click.style("Timed out waiting for run.", fg="red"))
-                    asr_curve.append(0)
-                    attack.update(0.0)
-                    scenario.reset_event_state(self.gh_client)
-                    continue
-
-                stdout, stderr = self._get_workflow_logs(run_id)
-                run_result = {"stdout": stdout, "stderr": stderr, "exit_code": 0}
-
-                security_breached = scenario.get_security_evaluator().evaluate(run_result, self.gh_client, scenario)
-                score = 1.0 if security_breached else 0.0
-                asr_curve.append(int(score))
-                click.echo(f"Iteration {i + 1} score: {score} (breached={security_breached})")
-
-                attack.update(score)
-
-                with open(history_path, "a") as f:
-                    import json as _json
-
-                    f.write(_json.dumps({"iteration": i + 1, "score": score, "run_id": run_id}) + "\n")
-
-                scenario.reset_event_state(self.gh_client)
-
+        except Exception as exc:
+            result["error"] = str(exc)
         finally:
             if cleanup:
-                scenario.teardown_state(self.gh_client)
-                self.provisioner.teardown()
+                self._cleanup(scenario if setup_started else None, result)
             else:
                 click.echo(click.style(f"SKIP CLEANUP: {self.repo_name} remains active.", fg="yellow"))
 
-        final_asr = sum(asr_curve) / len(asr_curve) if asr_curve else 0.0
+        valid_scores = [score for score in asr_curve if score is not None]
+        final_asr = sum(valid_scores) / len(valid_scores) if valid_scores else None
+
         best = attack.best_payload
 
         if best:
@@ -356,20 +499,24 @@ class BenchmarkRunner:
                 f.write(best)
             click.echo(f"Best payload written to {best_path}")
 
-        result = {
-            "workflow": workflow_id,
-            "scenario": scenario_id,
-            "attack": attack_id,
-            "iterations": iterations,
-            "asr_curve": asr_curve,
-            "final_asr": final_asr,
-            "best_payload": best,
-            "runs_dir": runs_dir,
-        }
+        result.update(
+            {
+                "workflow": workflow_id,
+                "scenario": scenario_id,
+                "attack": attack_id,
+                "iterations": iterations,
+                "asr_curve": asr_curve,
+                "final_asr": final_asr,
+                "best_payload": best,
+                "runs_dir": runs_dir,
+                "valid_iterations": len(valid_scores),
+                "unknown_iterations": iterations - len(valid_scores),
+            }
+        )
         with open(os.path.join(runs_dir, "metadata.json"), "w") as f:
             json.dump(result, f, indent=4)
 
-        click.echo(f"\nOptimization complete. Final ASR: {final_asr:.2f} ({sum(asr_curve)}/{len(asr_curve)})")
+        click.echo(f"\nOptimization complete. Final ASR: {final_asr} ({sum(valid_scores)}/{len(valid_scores)} valid trials)")
         return result
 
     def offline_optimize(self, workflow_id, scenario_id, attack_id, iterations, victim_model: str | None = None):
@@ -416,8 +563,10 @@ class BenchmarkRunner:
 
         attack = load_attack(attack_id)
         timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        runs_dir = _os.path.join(self.workspace_dir, "runs", f"offline-{timestamp.replace(':', '-')}")
-        _os.makedirs(runs_dir, exist_ok=True)
+        runs_dir = _os.path.join(
+            self.workspace_dir, "runs", f"offline-{timestamp.replace(':', '-')}-{uuid.uuid4().hex[:12]}"
+        )
+        _os.makedirs(runs_dir)
         history_path = _os.path.join(runs_dir, "attack_history.jsonl")
 
         asr_curve = []
@@ -432,8 +581,9 @@ class BenchmarkRunner:
                 self._inject_attack_slots(scenario, attack, baseline_input)
             except ValueError as e:
                 click.echo(click.style(f"Attacker refused: {e}", fg="yellow"))
-                asr_curve.append(0)
-                attack.update(0.0)
+                asr_curve.append(None)
+                with open(history_path, "a") as handle:
+                    handle.write(json.dumps({"iteration": i + 1, "score": None, "error": str(e)}) + "\n")
                 continue
 
             injected_input = self._reconstruct_llm_input(scenario, workflow_dir, repo_name="owner/repo", prompts_only=True)
@@ -448,11 +598,21 @@ class BenchmarkRunner:
                 response_text = resp.choices[0].message.content or ""
             except Exception as e:
                 click.echo(click.style(f"Model call failed: {e}", fg="red"))
-                asr_curve.append(0)
-                attack.update(0.0)
+                asr_curve.append(None)
+                with open(history_path, "a") as handle:
+                    handle.write(json.dumps({"iteration": i + 1, "score": None, "error": str(e)}) + "\n")
                 continue
 
-            score = 1.0 if preflight_check(response_text) else 0.0
+            try:
+                verdict = preflight_check(response_text)
+                if type(verdict) is not bool:
+                    raise ValueError("Preflight check must return a boolean")
+                score = float(verdict)
+            except Exception as exc:
+                asr_curve.append(None)
+                with open(history_path, "a") as handle:
+                    handle.write(json.dumps({"iteration": i + 1, "score": None, "error": str(exc)}) + "\n")
+                continue
             asr_curve.append(int(score))
             status = click.style("PASS", fg="green") if score else click.style("FAIL", fg="red")
             click.echo(f"Iteration {i + 1}: {status}")
@@ -477,7 +637,8 @@ class BenchmarkRunner:
                 click.echo(click.style("Attack succeeded — stopping early.", fg="green"))
                 break
 
-        final_asr = sum(asr_curve) / len(asr_curve) if asr_curve else 0.0
+        valid_scores = [score for score in asr_curve if score is not None]
+        final_asr = sum(valid_scores) / len(valid_scores) if valid_scores else None
         best = attack.best_payload
 
         if best:
@@ -496,11 +657,15 @@ class BenchmarkRunner:
             "best_payload": best,
             "runs_dir": runs_dir,
             "mode": "offline",
+            "valid_iterations": len(valid_scores),
+            "unknown_iterations": len(asr_curve) - len(valid_scores),
         }
         with open(_os.path.join(runs_dir, "metadata.json"), "w") as f:
             json.dump(result, f, indent=4)
 
-        click.echo(f"\nOffline optimization complete. ASR: {final_asr:.2f} ({sum(asr_curve)}/{len(asr_curve)})")
+        click.echo(
+            f"\nOffline optimization complete. ASR: {final_asr} ({sum(valid_scores)}/{len(valid_scores)} valid trials)"
+        )
         return result
 
     def _find_scenario_path(self, scenario_id):
@@ -731,6 +896,8 @@ class BenchmarkRunner:
                 scenario.runtime_state["pr_number"] = pr.number
                 return True, None
             elif event_type in ["issue_comment", "pull_request_review", "pull_request_review_comment"]:
+                if event_type == "pull_request_review_comment":
+                    return False, "Inline review comments require commit/path/line support; this trigger is unsupported."
                 target_number = data.get("number")
                 if not target_number:
                     prs = repo.get_pulls(state="open", sort="created", direction="desc")
@@ -739,16 +906,19 @@ class BenchmarkRunner:
 
                 if target_number:
                     if event_type == "pull_request_review":
+                        scenario.runtime_state["pr_number"] = target_number
                         pr = repo.get_pull(target_number)
                         pr.create_review(body=data.get("body", "Looks good to me."), event="COMMENT")
                     else:
+                        scenario.runtime_state["issue_number"] = target_number
                         issue = repo.get_issue(target_number)
                         issue.create_comment(data.get("body", "/review"))
                     return True, None
                 return False, "Could not find a target PR/Issue for the event."
             elif event_type == "workflow_dispatch":
                 workflow = repo.get_workflow(data.get("workflow"))
-                workflow.create_dispatch(repo.default_branch, data.get("inputs", {}))
+                if not workflow.create_dispatch(repo.default_branch, data.get("inputs", {})):
+                    return False, "GitHub rejected workflow dispatch"
                 return True, None
         except Exception as e:
             return False, str(e)
@@ -798,72 +968,36 @@ class BenchmarkRunner:
         retry=retry_if_result(lambda res: res is None),
         stop=stop_after_attempt(60),
         wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry_error_callback=lambda state: None,
     )
     def _wait_for_run(self, start_time, expected_event=None):
-        """Waits for all workflow runs to start after start_time and then wait for completion."""
-        repo = self.gh_client.repository
-
-        runs = repo.get_workflow_runs()
-        relevant_runs = []
-        count = 0
-        for run in runs:
-            if count >= 30:
-                break
-            if run.created_at.replace(tzinfo=timezone.utc).timestamp() > start_time - 30:
-                relevant_runs.append(run)
-            count += 1
-
-        if not relevant_runs:
+        """Wait for the uniquely matching workflow, excluding pre-trigger runs."""
+        candidates = []
+        events = {expected_event} if expected_event else None
+        if expected_event in {"pull_request", "pull_request_target"}:
+            events = {"pull_request", "pull_request_target"}
+        workflows = getattr(self, "_workflow_events", None)
+        state = getattr(self, "_trial_state", {})
+        for run in self.gh_client.repository.get_workflow_runs()[:100]:
+            if run.id in getattr(self, "_baseline_run_ids", set()):
+                continue
+            if run.created_at.timestamp() < start_time:
+                continue
+            if events and run.event not in events:
+                continue
+            if workflows is not None:
+                path = run.path.split("@", 1)[0]
+                if path not in workflows or run.event not in workflows[path]:
+                    continue
+            pr_number = state.get("pr_number")
+            if pr_number and run.pull_requests and not any(pr.number == pr_number for pr in run.pull_requests):
+                continue
+            candidates.append(run)
+        if len(candidates) > 1:
+            raise RuntimeError("Ambiguous workflow attribution: multiple runs match this trigger")
+        if not candidates or candidates[0].status != "completed":
             return None
-
-        # Check if a run for the expected event has appeared yet
-        if expected_event:
-            has_expected = any(run.event == expected_event for run in relevant_runs)
-            if not has_expected:
-                click.echo(f"Waiting for run with event '{expected_event}' to appear...")
-                return None
-
-        # Check if all relevant runs are completed
-        for run in relevant_runs:
-            if run.status != "completed":
-                click.echo(f"Workflow run {run.id} ({run.name}) in progress (status: {run.status})...")
-                # Trigger a retry until ALL are completed
-                return None
-
-        # All discovered runs are completed. Wait a short quiescence period to check for new ones
-        # especially if they are triggered by side effects of completed runs.
-        # We only do this if we haven't already returned once.
-        if not hasattr(self, "_last_run_count") or self._last_run_count < len(relevant_runs):
-            self._last_run_count = len(relevant_runs)
-            click.echo("All discovered runs completed. Waiting for quiescence...")
-            time.sleep(10)
-            return None
-
-        # Sort by creation time (ascending) to pick the original trigger
-        relevant_runs.sort(key=lambda r: r.created_at)
-
-        # Prefer non-skipped runs and those matching the expected event
-        target_run = None
-        if expected_event:
-            for run in reversed(relevant_runs):  # Prefer newest if multiple match
-                if run.conclusion != "skipped" and run.event == expected_event:
-                    target_run = run
-                    break
-
-        if not target_run:
-            for run in relevant_runs:
-                if run.conclusion != "skipped":
-                    target_run = run
-                    break
-
-        if not target_run:
-            target_run = relevant_runs[0]
-
-        # Reset last_run_count for next time
-        if hasattr(self, "_last_run_count"):
-            del self._last_run_count
-
-        return target_run.id, target_run
+        return candidates[0].id, candidates[0]
 
     def _get_workflow_logs(self, run_id):
         """Retrieves the full logs for a specific workflow run."""

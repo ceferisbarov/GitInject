@@ -10,7 +10,6 @@ from tenacity import (
     before_sleep_log,
     retry,
     retry_if_exception_type,
-    retry_if_result,
     stop_after_attempt,
     wait_exponential,
 )
@@ -57,6 +56,8 @@ class GitHubClient:
         self.token = token or self._get_token()
         self.gh = Github(self.token)
         self._repo_cache: Optional[Repository.Repository] = None
+        self._owned_repo = None
+        self._authenticated_login = None
 
     def _get_token(self) -> str:
         """Retrieves GitHub token from environment or gh CLI."""
@@ -83,8 +84,10 @@ class GitHubClient:
 
     def get_authenticated_user_login(self) -> str:
         """Returns the login of the authenticated user for this client."""
-        rate_limiter.wait()
-        return self.gh.get_user().login
+        if self._authenticated_login is None:
+            rate_limiter.wait()
+            self._authenticated_login = self.gh.get_user().login
+        return self._authenticated_login
 
     @property
     def repository(self) -> Repository.Repository:
@@ -120,6 +123,8 @@ class GitHubClient:
 
     def create_repo(self, public: bool = True) -> Tuple[bool, str]:
         """Creates the repository if it doesn't exist."""
+        if self._owned_repo is not None:
+            return False, "Client already owns a repository awaiting cleanup"
         try:
             name = self.repo_name.split("/")[-1]
             if "/" in self.repo_name:
@@ -135,112 +140,69 @@ class GitHubClient:
 
             self.repo_name = repo.full_name
             self._repo_cache = repo
+            self._owned_repo = (repo.full_name, repo.id)
             return True, ""
         except GithubException as e:
             return False, str(e)
 
     def fork_repo(self, template_repo_name: str) -> Tuple[bool, str]:
-        """Forks a template repository into a new unique name, prioritizing the gh-bench organization."""
+        """Fork the specified source, refusing collisions and existing owner forks."""
+        if self._owned_repo is not None:
+            return False, "Client already owns a repository awaiting cleanup"
         try:
-            # First, check if the target repo already exists and delete it if so
+            user_login = self.get_authenticated_user_login()
+            owner, name = self.repo_name.split("/", 1) if "/" in self.repo_name else (user_login, self.repo_name)
+            target = f"{owner}/{name}"
             try:
-                rate_limiter.wait()
-                existing_repo = self.gh.get_repo(self.repo_name)
-                click.echo(f"Repository {self.repo_name} already exists. Deleting it first...")
-                existing_repo.delete()
-                self._repo_cache = None
-                # Wait for it to be fully deleted
-                time.sleep(5)
-            except GithubException:
-                pass  # Repo doesn't exist, which is what we want
-
-            # Check if a fork already exists in the gh-bench organization
-            repo_short_name = template_repo_name.split("/")[-1]
-            gh_bench_repo_name = f"gh-bench/{repo_short_name}"
-
-            try:
-                rate_limiter.wait()
-                template_repo = self.gh.get_repo(gh_bench_repo_name)
-                click.echo(f"Using controlled fork from: {gh_bench_repo_name}")
-            except GithubException:
-                # If it doesn't exist in gh-bench, fork it there first to avoid notifying maintainers in every run
-                click.echo(f"Mirroring {template_repo_name} to gh-bench organization...")
-                rate_limiter.wait()
-                source_repo = self.gh.get_repo(template_repo_name)
-                source_repo.create_fork(organization="gh-bench")
-
-                # Wait for the mirror fork to be ready
-                @retry(
-                    retry=retry_if_result(lambda res: res is False),
-                    stop=stop_after_attempt(15),
-                    wait=wait_exponential(multiplier=1, min=2, max=10),
-                )
-                def wait_for_mirror():
-                    try:
-                        self.gh.get_repo(gh_bench_repo_name)
-                        return True
-                    except GithubException:
-                        return False
-
-                if not wait_for_mirror():
-                    return False, f"Failed to mirror {template_repo_name} to gh-bench."
-
-                template_repo = self.gh.get_repo(gh_bench_repo_name)
-
-            # Delete any existing fork of template_repo owned by this user (may have a different name
-            # from a previous --no-cleanup run, which would cause GitHub to return it instead of
-            # creating a fresh fork).
-            user_login = self.gh.get_user().login
-            rate_limiter.wait()
-            for fork in template_repo.get_forks():
-                if fork.owner.login.lower() == user_login.lower():
-                    click.echo(f"Deleting stale fork {fork.full_name}...")
-                    rate_limiter.wait()
-                    fork.delete()
-                    self._repo_cache = None
-                    time.sleep(5)
-                    break
-
-            name = self.repo_name.split("/")[-1]
-
-            # Handle organization if specified in repo_name
-            org = None
-            if "/" in self.repo_name:
-                owner = self.repo_name.split("/", 1)[0]
-                user = self.gh.get_user()
-                if user.login.lower() != owner.lower():
-                    org = owner
-
-            if org:
-                new_repo = template_repo.create_fork(organization=org, name=name, default_branch_only=True)
+                self.gh.get_repo(target)
+            except GithubException as exc:
+                if exc.status != 404:
+                    raise
             else:
-                new_repo = template_repo.create_fork(name=name, default_branch_only=True)
-
+                return False, f"Repository already exists: {target}"
+            template = self.gh.get_repo(template_repo_name)
+            for existing in template.get_forks():
+                if existing.owner.login.lower() == owner.lower():
+                    return False, f"Owner already has a fork: {existing.full_name}; use a separate owner or repository copy"
+            kwargs = {"name": name, "default_branch_only": True}
+            if owner.lower() != user_login.lower():
+                kwargs["organization"] = owner
+            new_repo = template.create_fork(**kwargs)
+            if new_repo.full_name.lower() != target.lower():
+                return False, f"GitHub returned an unexpected fork: {new_repo.full_name}"
             self.repo_name = new_repo.full_name
             self._repo_cache = new_repo
-
-            @retry(
-                retry=retry_if_result(lambda res: res is False),
-                stop=stop_after_attempt(15),
-                wait=wait_exponential(multiplier=1, min=2, max=10),
-            )
-            def wait_for_fork():
-                try:
-                    self._repo_cache = None
-                    info = self.get_repo_info()
-                    if not info:
-                        return False
-                    # Try to access the repository content to ensure it's ready on disk
-                    # This prevents 403 Forbidden on subsequent DELETE or other ops
-                    self.repository.get_contents("")
-                    return True
-                except GithubException:
-                    return False
-
-            wait_for_fork()
+            self._owned_repo = (new_repo.full_name, new_repo.id)
             return True, ""
-        except Exception as e:
-            return False, str(e)
+        except Exception as exc:
+            return False, str(exc)
+
+    @retry(
+        retry=retry_if_exception_type(GithubException),
+        stop=stop_after_attempt(15),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+    )
+    def wait_until_ready(self):
+        repo = self.gh.get_repo(self.repo_name)
+        repo.get_branch(repo.default_branch)
+        self._repo_cache = repo
+
+    def delete_owned_repo(self) -> Tuple[bool, str]:
+        """Delete only the exact repository created through this client."""
+        if self._owned_repo is None:
+            return True, ""
+        name, repo_id = self._owned_repo
+        try:
+            repo = self.gh.get_repo(name)
+            if repo.id != repo_id:
+                return False, f"Refusing cleanup: repository ID changed for {name}"
+            repo.delete()
+        except GithubException as exc:
+            if exc.status != 404:
+                return False, str(exc)
+        self._owned_repo = None
+        self._repo_cache = None
+        return True, ""
 
     @retry(
         retry=retry_if_exception_type(GithubException),
@@ -250,7 +212,10 @@ class GitHubClient:
     def delete_repo(self) -> Tuple[bool, str]:
         """Deletes the current repository."""
         try:
-            self.repository.delete()
+            repo = self.repository
+            repo.delete()
+            if self._owned_repo == (self.repo_name, repo.id):
+                self._owned_repo = None
             self._repo_cache = None
             return True, ""
         except GithubException as e:
@@ -259,8 +224,7 @@ class GitHubClient:
             if e.status == 403:
                 if "delete_repo" in str(e):
                     msg = (
-                        "\nERROR: Missing 'delete_repo' scope. Please run:\n"
-                        "  gh auth refresh -h github.com -s delete_repo\n"
+                        "\nERROR: Missing 'delete_repo' scope. Please run:\n  gh auth refresh -h github.com -s delete_repo\n"
                     )
                     click.echo(click.style(msg, fg="yellow", bold=True))
                 elif "done being created on disk" in str(e):
@@ -347,44 +311,45 @@ class GitHubClient:
         except GithubException as e:
             return False, str(e)
 
+    @staticmethod
+    def _artifact(item, kind):
+        created = item.submitted_at if kind == "review" else item.created_at
+        return {
+            "id": item.id,
+            "kind": kind,
+            "body": item.body or "",
+            "author": item.user.login if item.user else "",
+            "author_type": item.user.type if item.user else "",
+            "created_at": created.isoformat() if created else None,
+            "state": item.state if kind == "review" else None,
+        }
+
     def get_pr_details(self, pr_number: int) -> Dict[str, Any]:
-        """Fetches details of a Pull Request."""
-        try:
-            pr = self.repository.get_pull(pr_number)
-            comments = [c.body for c in pr.get_issue_comments()]
-
-            # Also check PR review bodies and review comments
-            try:
-                for review in pr.get_reviews():
-                    if review.body:
-                        comments.append(review.body)
-                for comment in pr.get_review_comments():
-                    if comment.body:
-                        comments.append(comment.body)
-            except Exception:
-                pass
-
-            return {
-                "title": pr.title,
-                "body": pr.body,
-                "state": pr.state,
-                "comments": comments,
-            }
-        except GithubException:
-            return {}
+        """Fetch complete, attributed comments and formal reviews; propagate read errors."""
+        pr = self.repository.get_pull(pr_number)
+        comments = [self._artifact(c, "issue_comment") for c in pr.get_issue_comments()]
+        reviews = [self._artifact(r, "review") for r in pr.get_reviews()]
+        comments.extend(reviews)
+        comments.extend(self._artifact(c, "review_comment") for c in pr.get_review_comments())
+        return {
+            "title": pr.title,
+            "body": pr.body,
+            "state": pr.state,
+            "comments": [c["body"] for c in comments],
+            "comment_details": comments,
+            "reviews": reviews,
+        }
 
     def get_issue_details(self, issue_number: int) -> Dict[str, Any]:
-        """Fetches details of an Issue."""
-        try:
-            issue = self.repository.get_issue(issue_number)
-            return {
-                "title": issue.title,
-                "body": issue.body,
-                "state": issue.state,
-                "comments": [c.body for c in issue.get_comments()],
-            }
-        except GithubException:
-            return {}
+        issue = self.repository.get_issue(issue_number)
+        comments = [self._artifact(c, "issue_comment") for c in issue.get_comments()]
+        return {
+            "title": issue.title,
+            "body": issue.body,
+            "state": issue.state,
+            "comments": [c["body"] for c in comments],
+            "comment_details": comments,
+        }
 
     @retry(
         retry=retry_if_exception_type(GithubException),
@@ -422,7 +387,9 @@ class GitHubClient:
         """Enables GitHub Actions for the repository."""
         try:
             # Using gh CLI for simplicity as PyGitHub doesn't have a direct method for this
-            stdout, stderr = self.run_gh(["repo", "edit", "--enable-actions"])
+            stdout, stderr = self.run_gh(
+                ["api", "-X", "PUT", f"repos/{self.repo_name}/actions/permissions", "-F", "enabled=true"]
+            )
             if stderr and "error" in stderr.lower():
                 return False, stderr
             return True, ""
@@ -597,4 +564,6 @@ class GitHubClient:
         env = os.environ.copy()
         env["GH_TOKEN"] = self.token
         result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+        if result.returncode != 0:
+            raise RuntimeError(f"gh exited with status {result.returncode}: {result.stderr.strip()}")
         return result.stdout, result.stderr
