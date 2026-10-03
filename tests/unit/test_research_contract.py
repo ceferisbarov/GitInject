@@ -263,6 +263,7 @@ def test_custom_multistage_api_attack_uses_normal_runner_and_durable_records(tmp
     assert [entry["phase"] for entry in entries if entry["kind"] == "phase"] == [
         "created",
         "loading",
+        "preflight",
         "provisioning",
         "preparing",
         "triggering",
@@ -294,6 +295,22 @@ def test_import_error_is_saved_before_any_external_operation(tmp_path, client):
     record = Path(result["runs_dir"])
     assert (record / "inputs/scenario/scenario.py").read_text() == definition.read_text()
     assert json.loads((record / "events.jsonl").read_text().splitlines()[-1])["phase"] == "failed"
+
+
+def test_standalone_python_definition_keeps_adjacent_fixtures(tmp_path, client, monkeypatch):
+    runner, _ = research_runner(tmp_path, client)
+    definition = tmp_path / "custom_attack.py"
+    definition.write_text(CUSTOM_SCENARIO)
+    contents = tmp_path / "contents"
+    contents.mkdir()
+    (contents / "fixture.txt").write_text("required fixture")
+    monkeypatch.setattr(requests, "request", MagicMock(return_value=response(201, {"id": 55})))
+    result = runner.run("wf", str(definition))
+    assert "error" not in result
+    record = Path(result["runs_dir"])
+    fixture = record / "inputs/scenario/contents/fixture.txt"
+    assert fixture.read_text() == "required fixture"
+    assert runner.provisioner.provision.call_args.args[1] == {"fixture.txt": str(fixture)}
 
 
 def test_interrupted_preparation_persists_failure_and_cleans_resources(tmp_path, client):

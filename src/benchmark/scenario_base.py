@@ -77,9 +77,8 @@ class AbstractScenario(ABC):
 
     def reset_event_state(self, gh_client) -> None:  # noqa: ARG002
         """
-        Called by the optimizer between iterations to close the PR/issue created
-        in the previous iteration so the next one can start clean.
-        Default is a no-op. Scenarios that open PRs or issues should override this.
+        Legacy hook for callers reusing a mutable trial. The live optimizer now
+        creates independent trials and does not use this hook.
         """
 
     def get_required_files(self) -> dict:

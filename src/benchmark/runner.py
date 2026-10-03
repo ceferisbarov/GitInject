@@ -74,10 +74,7 @@ class BenchmarkRunner:
         if "/" in prefix:
             owner, name_prefix = prefix.split("/", 1)
         else:
-            try:
-                owner = self.gh_client.get_authenticated_user_login()
-            except Exception:
-                owner = None
+            owner = None
             name_prefix = prefix
 
         random_suffix = "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
@@ -156,6 +153,8 @@ class BenchmarkRunner:
                 )
                 record.snapshot("scenario", source)
                 definition = Path(scenario_path)
+                if Path(source).is_file() and (definition.parent / "contents").is_dir():
+                    record.snapshot("scenario", definition.parent / "contents", prefix="contents")
                 if definition.is_dir():
                     scenario_path = str(record.directory / "inputs/scenario")
                 else:
@@ -189,6 +188,12 @@ class BenchmarkRunner:
                 previous_recorders.append((client, client.record_event, client.actor))
                 client.record_event = record.event
                 client.actor = actor
+            record.event("phase", phase="preflight")
+            record.manifest["actors"] = {actor: client.get_authenticated_user_login() for actor, client in actors.items()}
+            if "/" not in self.repo_name:
+                self._sync_repo_name(f"{record.manifest['actors']['owner']}/{self.repo_name}")
+                result["repo"] = scenario.runtime_state["repo"] = self.repo_name
+            record.save_manifest()
             self._configure_workflow_tracking(workflow_dir, workflow_meta)
             if not unaligned:
                 provider_error = self._validate_provider_requirements(workflow_meta)

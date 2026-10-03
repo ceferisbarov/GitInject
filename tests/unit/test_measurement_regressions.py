@@ -392,6 +392,7 @@ def test_failed_creation_saves_error_without_scenario_teardown_or_trigger(tmp_pa
         runner = BenchmarkRunner(str(tmp_path), repo_prefix="owner/trial")
     scenario = RecipeScenario(str(tmp_path), hypothesis())
     scenario.teardown_state = MagicMock()
+    runner.gh_client.get_authenticated_user_login.return_value = "owner"
     runner._find_scenario_path = MagicMock(return_value="unused")
     runner._load_scenario = MagicMock(return_value=scenario)
     runner.provisioner = MagicMock()

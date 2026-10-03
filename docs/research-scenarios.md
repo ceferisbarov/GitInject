@@ -91,6 +91,6 @@ Framework-created repositories and attacker forks record immutable ownership imm
 
 Live optimization runs each candidate through `run` with a fresh runner/repository and links the trial records to a search record. Unknown trials do not train the attacker. Search ASR describes the adaptive search history, not an independent estimate for the selected payload. Template forks still have GitHub's existing-fork collision limitations.
 
-Listing and suite planning no longer construct authenticated runners. Python discovery still imports scenario code. Co-located Python/JSON definitions and duplicate IDs fail explicitly. GitLab shares discovery/loading, but this lifecycle and evidence contract currently applies to the GitHub runner.
+Listing and suite planning no longer construct authenticated runners. Runner construction resolves credentials locally; GitHub identity reads begin during the recorded preflight, and the manifest retains the role-to-login mapping. Python discovery still imports scenario code. Co-located Python/JSON definitions and duplicate IDs fail explicitly. GitLab shares discovery/loading, but this lifecycle and evidence contract currently applies to the GitHub runner.
 
 These records support inspection and manual reproduction. Automatic resume/reconciliation, a queue, budgets, and concurrency scheduling remain separate follow-up work. Live service versions, imported code outside saved inputs, and account permissions can still affect reproduction.

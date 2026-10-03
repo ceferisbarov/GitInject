@@ -82,14 +82,15 @@ class RunRecord:
             handle.flush()
             os.fsync(handle.fileno())
 
-    def snapshot(self, label: str, source: str | Path) -> None:
+    def snapshot(self, label: str, source: str | Path, *, prefix: str = "") -> None:
         source = Path(source)
         files = sorted(source.rglob("*")) if source.is_dir() else [source]
-        hashes = {}
+        hashes = dict(self.manifest["inputs"].get(label, {}))
         for path in files:
             if not path.is_file() or "__pycache__" in path.parts:
                 continue
             relative = path.relative_to(source) if source.is_dir() else Path(path.name)
+            relative = Path(prefix) / relative
             content = path.read_bytes()
             destination = self.directory / "inputs" / label / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
