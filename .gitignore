@@ -21,3 +21,7 @@ reports/
 actions/
 GEMINI.md
 attacks/*
+.env
+
+# Papers
+*.pdf
