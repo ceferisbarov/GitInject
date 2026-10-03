@@ -1,0 +1,120 @@
+site_name: GitInject
+site_description: Evaluate prompt injection in live AI-powered CI/CD workflows.
+site_url: https://ceferisbarov.github.io/GitInject/
+repo_url: https://github.com/ceferisbarov/GitInject
+repo_name: ceferisbarov/GitInject
+edit_uri: edit/master/docs/
+strict: true
+validation:
+  nav:
+    omitted_files: warn
+  links:
+    anchors: warn
+hooks:
+  - docs/_hooks.py
+theme:
+  name: material
+  icon:
+    logo: material/source-pull
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+plugins:
+  - search
+  - gen-files:
+      scripts:
+        - docs/_generate.py
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [ . ]
+          options:
+            allow_inspection: false
+            docstring_style: sphinx
+            show_root_heading: true
+            show_root_full_path: false
+            show_source: true
+            show_signature_annotations: true
+            separate_signature: true
+            members_order: source
+            filters: ["!^_"]
+            show_if_no_docstring: true
+            heading_level: 2
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - mkdocs-click
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - toc:
+      permalink: true
+exclude_docs: |
+  _generate.py
+  _hooks.py
+nav:
+  - Get started:
+      - Overview: index.md
+      - Installation and configuration: getting-started/installation.md
+      - First benchmark: getting-started/quickstart.md
+  - Concepts:
+      - Workflows, scenarios, and attacks: concepts/components.md
+      - Execution lifecycle: concepts/lifecycle.md
+      - Metrics and evidence: concepts/evaluation.md
+  - Guides:
+      - Run benchmarks and suites: guides/running-benchmarks.md
+      - Author Python scenarios: guides/scenarios.md
+      - Research experiments: guides/research.md
+      - Add a workflow: guides/workflows.md
+      - Generate and optimize attacks: guides/attacks.md
+      - Scan a workflow: guides/scanner.md
+      - Inspect and reproduce runs: guides/results.md
+      - GitLab: guides/gitlab.md
+      - Troubleshooting: guides/troubleshooting.md
+  - Reference:
+      - CLI: reference/cli.md
+      - Workflow metadata: reference/workflow-metadata.md
+      - Events: reference/events.md
+      - Run artifacts: reference/run-artifacts.md
+      - Workflow catalog: reference/workflows.md
+      - Scenario catalog: reference/scenarios.md
+      - Scanner recipes: reference/recipes.md
+  - API:
+      - Overview: api/index.md
+      - Runner and analyzer: api/runner.md
+      - Scenarios and discovery: api/scenarios.md
+      - Runtime context and records: api/runtime.md
+      - Evaluators and evidence: api/evaluation.md
+      - Attacks: api/attacks.md
+      - GitHub and provisioning: api/github.md
+      - Scanner pipeline: api/scanner.md
+      - Scanner types: api/scanner-types.md
+      - Model calls and usage: api/llm.md
+      - Types: api/types.md
+      - GitLab: api/gitlab.md
+  - Development:
+      - Contributing: development/contributing.md
+      - Build and publish the docs: development/documentation.md

@@ -1,180 +1,67 @@
-<div align="center">
-
 # GitInject
 
-**A framework for evaluating prompt injection vulnerabilities in real, live GitHub workflows.**
+**A framework for evaluating prompt injection in real AI-powered CI/CD workflows.**
 
-[![Paper](https://img.shields.io/badge/arXiv-2606.09935-b31b1b.svg)](https://arxiv.org/abs/2606.09935)
-[![Python](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/)
-[![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](./LICENSE)
+[Documentation](https://ceferisbarov.github.io/GitInject/) · [Paper](https://arxiv.org/abs/2606.09935) · [Contributing](CONTRIBUTING.md) · [Apache 2.0](LICENSE)
 
-*Official implementation of ["GitInject: Real-World Prompt Injection Attacks in AI-Powered CI/CD Pipelines"](https://arxiv.org/abs/2606.09935).*
+GitInject provisions repositories, installs agent workflows, triggers scenario inputs, and evaluates the resulting repository state and agent output. The GitHub runner records copied inputs, execution phases, evidence, and results for each attempt.
 
-</div>
+It measures utility, security breaches, and verified agent invocation independently. Verdicts can be `true`, `false`, or unknown; execution/evaluation errors are reported separately. The scanner generates and ranks attack hypotheses and validates candidates through the same live run engine. A GitLab runner is also available with a narrower execution contract.
 
----
+> GitInject creates public repositories, installs credentials, triggers real workflows, and deletes repositories during cleanup. Use a dedicated testing account.
 
-> [!WARNING]
-> GitInject provisions live repositories and triggers real workflow runs against your GitHub account. **Always use a secondary GitHub account** dedicated to testing.
+## Get started
 
-## Overview
-
-AI-powered agents are increasingly embedded in CI/CD pipelines to autonomously review pull requests, triage issues, and maintain codebases. Because they ingest untrusted content while operating with elevated repository permissions, they are a natural target for prompt injection with supply-chain consequences.
-
-GitInject is an open-source framework for studying these vulnerabilities in **real, live GitHub workflows**. Unlike prior agent-security benchmarks that *simulate* tool calls, GitInject provisions ephemeral repositories and triggers actual workflow runs, so sandbox constraints, credential handling, and permission boundaries behave exactly as they do in production.
-
-Each run is scored on two axes:
-
-- **Utility**: did the agent do its job?
-- **Security**: did it resist the attack?
-
-Metrics can be `true`, `false`, or `null` (unknown). Execution and evaluation errors are reported separately, and summaries show the number of known verdicts for each metric. Review older results before combining them with new measurements.
-
-The framework ships an autonomous **Vulnerability Scanner** that turns a workflow definition into a ranked, live-confirmed attack inventory without human-authored scenarios.
-
-### Supported agents
-
-GitInject ships workflow definitions for the major AI CI/CD agents:
-
-- **Claude Code Action** (Anthropic)
-- **Codex Action** (OpenAI)
-- **Gemini CLI** (Google)
-- **GitHub Copilot** workflows
-- **Cline** assistant
-
-GitLab CI/CD is also supported through a parallel runner (e.g. the `claude-gitlab-mr-review` workflow), so the same scenarios can exercise GitLab-hosted agents.
-
-## Project Structure
-
-| Path | Description |
-| --- | --- |
-| `src/benchmark/` | Core Python orchestrator and CLI. |
-| `src/benchmark/workflows/` | Dataset of workflow definitions with security metadata. |
-| `src/benchmark/scenarios/` | Python test cases evaluating Utility and Security. |
-| `src/benchmark/scanner/` | Autonomous vulnerability scanner pipeline. |
-| `src/benchmark/utils/` | GitHub/GitLab interaction and repo provisioning. |
-
-## Getting Started
-
-### Prerequisites
-
-- Python 3.13+
-- [uv](https://github.com/astral-sh/uv)
-- [GitHub CLI (`gh`)](https://cli.github.com/), authenticated with `repo` and `workflow` scopes
-- For Claude-based workflows, enable the [Claude GitHub App](https://github.com/apps/claude)
-
-### Installation
+Install Python 3.13+, [uv](https://docs.astral.sh/uv/), and the [GitHub CLI](https://cli.github.com/), then run from the repository root:
 
 ```bash
-uv sync
-```
-
-### Configuration
-
-Each workflow declares the secrets it needs (via `secrets.*` in its YAML and `required_secrets` in its `metadata.json`), so you only need the API key(s) for the provider(s) you actually run:
-
-| Provider / use | Environment variable |
-| --- | --- |
-| Anthropic (Claude workflows) | `ANTHROPIC_API_KEY` |
-| OpenAI (Codex workflows) | `OPENAI_API_KEY` |
-| Google (Gemini workflows and the default LLM judge) | `GEMINI_API_KEY` |
-| OpenRouter (scanner / ranker model routing) | `OPENROUTER_API_KEY` |
-
-```bash
-# Export only what the target workflow (and, for scan, the scanner) requires:
-export ANTHROPIC_API_KEY=your_key_here
-```
-
-## Usage
-
-GitInject is driven by a single CLI. All commands are invoked via `uv run python -m src.benchmark.cli`.
-
-### 1. Discover components
-
-List available workflows and scenarios with their compatibility metadata (Category and Supported Events):
-
-```bash
+uv sync --locked
 uv run python -m src.benchmark.cli list workflows
 uv run python -m src.benchmark.cli list scenarios
+uv run python -m src.benchmark.cli run-suite --workflow-labels codex --scenario-type benign --dry-run
 ```
 
-### 2. Run evaluations
-
-Run a specific test case or an entire compatible suite.
+Configure your GitHub identity and workflow/judge credentials using the [installation guide](docs/getting-started/installation.md). Then execute a first trial:
 
 ```bash
-# Run a single workflow against a scenario
-uv run python -m src.benchmark.cli run --workflow codex-pr-review --scenario vulnerable_code_review --unaligned
-
-# Run all scenarios matching a workflow's category and event type
-uv run python -m src.benchmark.cli run --workflow codex-pr-review --scenario all --unaligned
-
-# Identify compatible pairs without executing them (dry run)
-uv run python -m src.benchmark.cli run-suite --workflow-labels code-review --dry-run
+uv run python -m src.benchmark.cli run --workflow codex-pr-review --scenario vulnerable_code_review
 ```
 
-#### Reproduce the paper's attacks
+This pair needs `OPENAI_API_KEY` for Codex and `GEMINI_API_KEY` for semantic evaluation, plus local GitHub authentication. See the [quickstart](docs/getting-started/quickstart.md) for interpreting results.
 
-The 11 named attacks from the paper (Table 8) ship as scenarios under `src/benchmark/scenarios/malicious/`. A helper script runs each against its target workflow (credentials are read from a gitignored `references/run.sh`):
+## Guides and reference
+
+- [Run benchmarks, suites, and bundled paper attacks](docs/guides/running-benchmarks.md)
+- [Author Python scenarios](docs/guides/scenarios.md) and [research experiments](docs/guides/research.md)
+- [Add workflows](docs/guides/workflows.md)
+- [Generate and optimize attacks](docs/guides/attacks.md)
+- [Scan workflows](docs/guides/scanner.md)
+- [Inspect and reproduce results](docs/guides/results.md)
+- [CLI reference](https://ceferisbarov.github.io/GitInject/reference/cli/) and [Python API](https://ceferisbarov.github.io/GitInject/api/)
+
+Build or preview the documentation locally:
 
 ```bash
-# Run all 11 once; set REPEAT=5 to match the paper
-./scripts/run_paper_scenarios.sh
-REPEAT=5 ./scripts/run_paper_scenarios.sh
-
-# Or a single attack against its workflow
-./scripts/run_paper_scenarios.sh codex-pr-review pr_token_exfiltration_via_git_config
+uv sync --locked --group docs
+uv run --group docs mkdocs serve
 ```
 
-| Attack (paper) | Scenario | Workflow |
-| --- | --- | --- |
-| `pr_body_github_token_exfiltration` | `pr_token_exfiltration_via_git_config` | `codex-pr-review` |
-| `claude_md_token_exfiltration` | `claude_md_instructions_injection` | `claude-pr-review` |
-| `agents_md_token_exfiltration` | `codex_agents_md_injection` | `codex-pr-review` |
-| `gemini_md_token_exfiltration` | `gemini_md_instructions_injection` | `gemini-assistant` |
-| `claude_md_approval_manipulation` | `supply_chain_malicious_code` | `claude-pr-review` |
-| `agents_md_approval_manipulation` | `agents_md_approval_manipulation` | `codex-pr-review` |
-| `gemini_md_approval_manipulation` | `gemini_md_approval_manipulation` | `gemini-assistant` |
-| `pr_body_approval_manipulation` | `unauthorized_pr_approval` | `codex-pr-review` |
-| `issue_body_github_token_exfiltration` | `issue_onboarding_secret_exfiltration` | `gemini-assistant` |
-| `issue_body_reconnaissance` | `cline_issue_body_injection` | `cline-assistant` |
-| `denial_of_wallet` | `dos_request_flood` | `claude-pr-review` |
+The strict build and GitHub Pages deployment instructions are in [documentation development](docs/development/documentation.md).
 
-### 3. Scan for vulnerabilities
+## Repository layout
 
-Turn a workflow into a ranked, live-confirmed attack inventory:
-
-```bash
-uv run python -m src.benchmark.cli scan --workflow codex-pr-review
-```
-
-### 4. Report & cleanup
-
-```bash
-# Aggregate results of previous runs
-uv run python -m src.benchmark.cli report
-
-# Bulk-delete ephemeral repositories from your GitHub account
-uv run python -m src.benchmark.cli cleanup --prefix benchmark-run
-```
-
-## Extending GitInject
-
-- **Workflows**: add a folder in `src/benchmark/workflows/<name>/` containing a `metadata.json` (target action, category, required secrets) and the workflow definition under `contents/.github/workflows/`.
-- **Scenarios**: add a folder under `src/benchmark/scenarios/benign/<name>/` (utility baseline) or `src/benchmark/scenarios/malicious/<name>/` (attack) with a `scenario.py` (a class inheriting from `AbstractScenario`) plus any fixture files under `contents/`.
-
-For automated research, Python scenarios can use custom lifecycle hooks and arbitrary GitHub REST/GraphQL operations through explicit actor clients. JSON manifests preserve input copies/hashes, parameters, lineage, execution phases, and resource ownership. See [Research scenario authoring](./docs/research-scenarios.md) for the contract and an example.
-
-## Documentation
-
-- [System Architecture](./plans/architecture.md)
-- [Vulnerability Scanner Design](./plans/vulnerability-scanner.md)
-- [Roadmap & Status](./plans/concerns.md)
-- [Contribution Guidelines](./CONTRIBUTING.md)
+| Path | Purpose |
+| --- | --- |
+| `src/benchmark/` | CLI, runners, scenarios, evaluators, and attempt records. |
+| `src/benchmark/workflows/` | Target workflow assets and metadata. |
+| `src/benchmark/scenarios/` | Python utility and attack scenarios with fixtures. |
+| `src/benchmark/scanner/` | Hypothesis generation, ranking, recipes, validation, diagnostics, and reports. |
+| `docs/` | Published guides and reference. |
+| `tests/` | Unit and live integration tests. |
+| `research/` | Research notes and scanner warm-start material. |
+| `plans/` | Historical designs and future work, outside the published documentation. |
 
 ## Citation
-
-If you use GitInject in your research, please cite:
 
 ```bibtex
 @article{isbarov2026gitinject,
@@ -186,6 +73,4 @@ If you use GitInject in your research, please cite:
 }
 ```
 
-## Contact
-
-Jafar Isbarov. Email: isbarov at vt dot edu
+Contact Jafar Isbarov at `isbarov at vt dot edu`.
