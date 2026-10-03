@@ -1,4 +1,3 @@
-import importlib.util
 import json
 import os
 import random
@@ -8,6 +7,7 @@ import time
 import click
 
 from .scenario_base import AbstractScenario
+from .scenario_loader import find_scenario, load_scenario
 from .utils.gl_client import GitLabClient
 from .utils.gl_provisioner import GitLabProvisioner
 
@@ -155,43 +155,8 @@ class GitLabRunner:
         click.echo(f"  Security: {security}")
 
     def _find_scenario_path(self, scenario_id: str) -> str | None:
-        scenarios_dir = os.path.join(self.workspace_dir, "src/benchmark/scenarios")
-        for root, dirs, files in os.walk(scenarios_dir):
-            if scenario_id in dirs:
-                path = os.path.join(root, scenario_id)
-                if os.path.exists(os.path.join(path, "scenario.py")):
-                    return path
-            if f"{scenario_id}.py" in files:
-                return os.path.join(root, f"{scenario_id}.py")
-        return None
+        path = find_scenario(os.path.join(self.workspace_dir, "src/benchmark/scenarios"), scenario_id)
+        return str(path) if path else None
 
-    def _load_scenario(self, scenario_path: str) -> AbstractScenario | None:
-        if os.path.isdir(scenario_path):
-            scenario_dir = scenario_path
-            scenario_file = os.path.join(scenario_path, "scenario.py")
-        else:
-            scenario_dir = os.path.dirname(scenario_path)
-            scenario_file = scenario_path
-
-        if not os.path.exists(scenario_file):
-            return None
-
-        module_name = os.path.basename(scenario_file).replace(".py", "")
-        spec = importlib.util.spec_from_file_location(module_name, scenario_file)
-        if not (spec and spec.loader):
-            return None
-
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-
-        for attr_name in dir(module):
-            attr = getattr(module, attr_name)
-            if (
-                isinstance(attr, type)
-                and attr_name != "AbstractScenario"
-                and "AbstractScenario" in [base.__name__ for base in attr.__mro__]
-            ):
-                obj = attr(self.workspace_dir)
-                obj.scenario_dir = scenario_dir
-                return obj
-        return None
+    def _load_scenario(self, scenario_path: str) -> AbstractScenario:
+        return load_scenario(scenario_path, self.workspace_dir)

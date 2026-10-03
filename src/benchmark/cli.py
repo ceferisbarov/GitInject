@@ -37,22 +37,14 @@ def list_workflows():
             click.echo(f"- {w:25} | No metadata found.")
 
 
-def _discover_scenarios(scenarios_dir, runner_stub):
-    """Recursively finds and loads all scenarios."""
-    valid_scenarios = []
-    for root, _, files in os.walk(scenarios_dir):
-        # Skip 'contents' directories which contain payload files, not scenario definitions
-        if "contents" in root.split(os.sep):
-            continue
+def _discover_scenarios(scenarios_dir):
+    """Load scenario definitions without constructing an authenticated runner."""
+    from .scenario_loader import discover_scenario_paths, load_scenario
 
-        if "scenario.py" in files:
-            sc_path = os.path.join(root, "scenario.py")
-            scenario_obj = runner_stub._load_scenario(sc_path)
-            if scenario_obj:
-                # Use the directory name as the scenario name
-                sc_name = os.path.basename(root)
-                valid_scenarios.append((sc_name, scenario_obj))
-    return sorted(valid_scenarios, key=lambda x: x[0])
+    return sorted(
+        [(path.parent.name, load_scenario(path, os.getcwd())) for path in discover_scenario_paths(scenarios_dir)],
+        key=lambda item: item[0],
+    )
 
 
 @list.command(name="scenarios")
@@ -63,10 +55,7 @@ def list_scenarios():
         click.echo("Scenarios directory not found.")
         return
 
-    from .runner import BenchmarkRunner
-
-    runner_stub = BenchmarkRunner(os.getcwd(), repo_prefix="stub")
-    scenarios = _discover_scenarios(scenarios_dir, runner_stub)
+    scenarios = _discover_scenarios(scenarios_dir)
 
     for s_name, s_obj in scenarios:
         category = s_obj.category.value if s_obj.category else "none"
@@ -115,9 +104,20 @@ def list_scenarios():
     show_default=True,
     help="Number of times to repeat each run.",
 )
-def run(workflow, scenario, repo_prefix, cleanup, unaligned, log_llm_input, attack_id, attack_payload, repeat):
+@click.option("--parameters", default="{}", help="JSON object supplied to the scenario's run context.")
+@click.option("--seed", type=int, default=None, help="Seed for the scenario context's random generator.")
+def run(
+    workflow, scenario, repo_prefix, cleanup, unaligned, log_llm_input, attack_id, attack_payload, repeat, parameters, seed
+):
     """Run benchmark tests."""
     from .runner import BenchmarkRunner
+
+    try:
+        parameters = json.loads(parameters)
+        if not isinstance(parameters, dict):
+            raise ValueError("Expected a JSON object")
+    except ValueError as exc:
+        raise click.BadParameter(str(exc), param_hint="--parameters") from exc
 
     workflows_dir = "src/benchmark/workflows"
     scenarios_dir = "src/benchmark/scenarios"
@@ -152,13 +152,14 @@ def run(workflow, scenario, repo_prefix, cleanup, unaligned, log_llm_input, atta
             cleanup=cleanup,
             unaligned=unaligned,
             log_llm_input=log_llm_input,
+            parameters=parameters,
+            seed=seed,
         )
 
     if scenario.lower() == "all":
-        runner_stub = BenchmarkRunner(os.getcwd(), repo_prefix="stub")
         click.echo(f"Identifying compatible scenarios for workflow '{workflow}'...")
 
-        valid_scenarios = _discover_scenarios(scenarios_dir, runner_stub)
+        valid_scenarios = _discover_scenarios(scenarios_dir)
         scenarios_to_run = []
         for s_name, s_obj in valid_scenarios:
             s_event = s_obj.get_event().get("event_type")
@@ -206,6 +207,8 @@ def run(workflow, scenario, repo_prefix, cleanup, unaligned, log_llm_input, atta
                     cleanup=cleanup,
                     unaligned=unaligned,
                     log_llm_input=log_llm_input,
+                    parameters=parameters,
+                    seed=seed,
                 )
             _display_run_result(result)
             pairs_results[(workflow, scenario)].append(result)
@@ -322,8 +325,7 @@ def run_suite(
                 valid_workflows.append((w, meta))
 
     # Load scenarios
-    runner_stub = BenchmarkRunner(os.getcwd(), repo_prefix="stub")
-    all_scenarios = _discover_scenarios(scenarios_dir, runner_stub)
+    all_scenarios = _discover_scenarios(scenarios_dir)
     valid_scenarios = []
     for s_name, s_obj in all_scenarios:
         labels = set(getattr(s_obj, "labels", []))

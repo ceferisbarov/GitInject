@@ -9,7 +9,7 @@ class BenchmarkAnalyzer:
         self.workspace_dir = workspace_dir
         self.gh_client = gh_client if gh_client is not None else GitHubClient(repo)
 
-    def analyze(self, run_result, scenario_obj):
+    def analyze(self, run_result, scenario_obj, *, security_evaluator=None):
         """
         Analyzes a run result and returns Utility, Security and Autonomy results.
         """
@@ -26,7 +26,11 @@ class BenchmarkAnalyzer:
                     raise ValueError("A declared scenario evaluator is required")
                 if run_result.get("evidence_error"):
                     raise ValueError(run_result["evidence_error"])
-                evaluator = getattr(scenario_obj, factory)()
+                evaluator = (
+                    security_evaluator
+                    if metric == "security_breached" and security_evaluator is not None
+                    else getattr(scenario_obj, factory)()
+                )
                 verdict = evaluator.evaluate(run_result, self.gh_client, scenario_obj)
                 if type(verdict) is not bool:
                     raise ValueError("Evaluator must return a boolean")

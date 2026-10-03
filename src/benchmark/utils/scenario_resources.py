@@ -8,8 +8,8 @@ def setup_attacker_fork(scenario, owner_client):
     """Create a fresh attacker fork and record ownership before subsequent setup."""
     token = os.environ.get("ATTACKER_GITHUB_TOKEN")
     if not token:
-        return
-    client = GitHubClient(token=token)
+        raise ValueError("Required GitHub actor is unavailable: attacker")
+    client = GitHubClient(token=token, actor="attacker", record_event=owner_client.record_event)
     login = client.get_authenticated_user_login()
     client.repo_name = f"{login}/{owner_client.repository.name}"
     RepoProvisioner._require(client.fork_repo(owner_client.repo_name), "Create attacker fork")

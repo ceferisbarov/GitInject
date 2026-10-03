@@ -1,5 +1,4 @@
 import glob
-import importlib.util
 import json
 import os
 import random
@@ -7,12 +6,16 @@ import re
 import string
 import time
 import uuid
+from pathlib import Path
 
 import click
 from tenacity import retry, retry_if_result, stop_after_attempt, wait_exponential
 
 from .analyzer import BenchmarkAnalyzer
 from .attacks import AbstractAttack, load_attack
+from .run_context import RunContext, TriggerReceipt
+from .run_record import RunRecord, RunSpec, write_json
+from .scenario_loader import find_scenario, load_scenario
 from .utils.gh_client import GitHubClient
 from .utils.provisioner import RepoProvisioner
 from .utils.types import AIProvider
@@ -32,11 +35,11 @@ def _extract_inline_prompts(workflow_dict) -> list[str]:
 class BenchmarkRunner:
     """Orchestrates the execution of a benchmark test on real GitHub."""
 
-    def __init__(self, workspace_dir, repo_prefix="benchmark-run"):
+    def __init__(self, workspace_dir, repo_prefix="benchmark-run", *, gh_client=None, event_gh_client=None):
         self.workspace_dir = workspace_dir
         self.repo_prefix = repo_prefix
-        self.gh_client = GitHubClient()
-        self.event_gh_client = self._build_event_client()
+        self.gh_client = gh_client if gh_client is not None else GitHubClient()
+        self.event_gh_client = event_gh_client if event_gh_client is not None else self._build_event_client()
         self.repo_name = self._generate_repo_name(repo_prefix)
         self._sync_repo_name(self.repo_name)
 
@@ -51,6 +54,7 @@ class BenchmarkRunner:
                 token=attacker_token,
                 token_env_var="ATTACKER_GITHUB_TOKEN",
                 auth_label="attacker GitHub",
+                actor="attacker",
             )
         return self.gh_client
 
@@ -58,8 +62,10 @@ class BenchmarkRunner:
         """Keeps owner/analyzer/event clients pointed at the same repository."""
         self.repo_name = repo_name
         self.gh_client.repo_name = repo_name
+        self.gh_client._repo_cache = None
         if self.event_gh_client is not self.gh_client:
             self.event_gh_client.repo_name = repo_name
+            self.event_gh_client._repo_cache = None
         if hasattr(self, "analyzer"):
             self.analyzer.gh_client.repo_name = repo_name
 
@@ -102,31 +108,87 @@ class BenchmarkRunner:
         cleanup=True,
         unaligned=False,
         log_llm_input=False,
+        parameters=None,
+        seed=None,
+        parent_attempt_id=None,
+        attack: AbstractAttack | None = None,
+        security_evaluator=None,
     ):
         """Triggers a GitHub workflow and waits for completion."""
-        workflow_dir = os.path.join(self.workspace_dir, "src/benchmark/workflows", workflow_id)
-        scenario_path = self._find_scenario_path(scenario_id)
-
-        if not os.path.exists(workflow_dir) or not scenario_path:
-            return {"error": f"Workflow dir ({workflow_id}) or scenario ({scenario_id}) not found."}
-
-        meta_path = os.path.join(workflow_dir, "metadata.json")
-        workflow_meta = {}
-        if os.path.exists(meta_path):
-            with open(meta_path, "r") as f:
-                workflow_meta = json.load(f)
-
-        scenario = self._load_scenario(scenario_path)
-        if not scenario:
-            return {"error": f"Failed to load scenario {scenario_id}"}
-
-        timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        runs_dir = os.path.join(self.workspace_dir, "runs", f"{timestamp.replace(':', '-')}-{uuid.uuid4().hex[:12]}")
-        os.makedirs(runs_dir)
-        result = {"workflow": workflow_id, "scenario": scenario_id, "repo": self.repo_name, "timestamp": timestamp}
+        spec = RunSpec(
+            workflow=workflow_id,
+            scenario=str(scenario_id),
+            parameters=json.loads(json.dumps({} if parameters is None else parameters, allow_nan=False)),
+            seed=seed,
+            parent_attempt_id=parent_attempt_id,
+            attack=attack_id or getattr(attack, "name", None),
+            cleanup=cleanup,
+            unaligned=unaligned,
+        )
+        record = RunRecord(self.workspace_dir, spec)
+        runs_dir = str(record.directory)
+        timestamp = record.timestamp
+        result = {
+            "workflow": workflow_id,
+            "scenario": str(scenario_id),
+            "repo": self.repo_name,
+            "timestamp": timestamp,
+            "attempt_id": record.attempt_id,
+            "runs_dir": runs_dir,
+        }
         run_result = {}
         setup_started = False
+        scenario = context = None
+        previous_recorders = []
         try:
+            record.event("phase", phase="loading")
+            workflow_dir = os.path.join(self.workspace_dir, "src/benchmark/workflows", workflow_id)
+            scenario_path = self._find_scenario_path(scenario_id)
+            if not os.path.isdir(workflow_dir) or not scenario_path:
+                raise ValueError(f"Workflow dir ({workflow_id}) or scenario ({scenario_id}) not found.")
+            record.snapshot("workflow", workflow_dir)
+            workflow_dir = str(record.directory / "inputs/workflow")
+            if os.path.exists(scenario_path):
+                source = (
+                    os.path.dirname(scenario_path)
+                    if Path(scenario_path).name in {"scenario.py", "recipe.json"}
+                    else scenario_path
+                )
+                record.snapshot("scenario", source)
+                definition = Path(scenario_path)
+                if definition.is_dir():
+                    scenario_path = str(record.directory / "inputs/scenario")
+                else:
+                    scenario_path = str(record.directory / "inputs/scenario" / definition.name)
+            lockfile = os.path.join(self.workspace_dir, "uv.lock")
+            if os.path.isfile(lockfile):
+                record.snapshot("dependencies", lockfile)
+            scenario = self._load_scenario(scenario_path)
+            if scenario is None:
+                raise ValueError(f"Failed to load scenario {scenario_id}")
+            scenario.runtime_state["repo"] = self.repo_name
+            meta_path = os.path.join(workflow_dir, "metadata.json")
+            workflow_meta = {}
+            if os.path.isfile(meta_path):
+                with open(meta_path) as handle:
+                    workflow_meta = json.load(handle)
+            actors = {"owner": self.gh_client}
+            if self.event_gh_client is not self.gh_client:
+                actors["attacker"] = self.event_gh_client
+            context = RunContext(
+                spec,
+                record,
+                scenario.runtime_state,
+                actors,
+                lambda: self._legacy_trigger(scenario),
+                lambda: self._capture_gh_state(scenario),
+            )
+            for actor in scenario.required_actors:
+                context.github(actor)
+            for actor, client in actors.items():
+                previous_recorders.append((client, client.record_event, client.actor))
+                client.record_event = record.event
+                client.actor = actor
             self._configure_workflow_tracking(workflow_dir, workflow_meta)
             if not unaligned:
                 provider_error = self._validate_provider_requirements(workflow_meta)
@@ -148,6 +210,15 @@ class BenchmarkRunner:
             variables = {k: v for k in requirements["vars"] if (v := os.environ.get(k))}
 
             secrets.update(scenario.get_secrets())
+            missing = [name for name in scenario.get_required_secrets() if not os.environ.get(name)]
+            if missing:
+                raise ValueError("Missing scenario secrets: " + ", ".join(missing))
+            secrets.update({name: os.environ[name] for name in scenario.get_required_secrets()})
+
+            if attack_id or attack is not None:
+                attack = attack if attack is not None else load_attack(attack_id, payload=attack_payload)
+                self._inject_attack_slots(scenario, attack, self._reconstruct_llm_input(scenario, workflow_dir))
+                record.artifact("rendered_attack.json", scenario._injected)
 
             target_branch = getattr(scenario, "branch", None)
             template_repo = scenario.get_template_repo()
@@ -168,6 +239,18 @@ class BenchmarkRunner:
                     if "@" not in replacement:
                         substitution_map[original] = f"{replacement}@{tag}"
 
+            record.manifest["configuration"] = {
+                "secret_names": sorted(secrets),
+                "variables": variables,
+                "substitutions": substitution_map,
+                "required_actors": list(scenario.required_actors),
+                "template_repo": template_repo,
+                "branch": target_branch,
+                "workflow_metadata": workflow_meta,
+                "security_evaluator_source": "caller" if security_evaluator is not None else "scenario",
+            }
+            record.save_manifest()
+            record.event("phase", phase="provisioning")
             click.echo(f"Provisioning repository {self.repo_name}...")
             self.provisioner.provision(
                 workflow_dir,
@@ -179,10 +262,13 @@ class BenchmarkRunner:
                 substitution_map=substitution_map,
             )
             self._sync_repo_name(self.gh_client.repo_name)
+            result["repo"] = self.repo_name
+            scenario.runtime_state["repo"] = self.repo_name
 
+            record.event("phase", phase="preparing")
             click.echo(f"Preparing repository state for scenario '{scenario_id}'...")
             setup_started = True
-            scenario.setup_state(self.gh_client)
+            scenario.prepare(context)
 
             click.echo("Capturing context snapshot...")
             snapshot = self._capture_context_snapshot(scenario, workflow_dir)
@@ -198,22 +284,29 @@ class BenchmarkRunner:
                 with open(os.path.join(runs_dir, "llm_input.txt"), "w") as f:
                     f.write(llm_input)
 
-            if attack_id:
-                attack = load_attack(attack_id, payload=attack_payload)
-                click.echo(f"Applying attack '{attack_id}'...")
-                self._inject_attack_slots(scenario, attack, llm_input)
-
             click.echo(f"Triggering workflow '{workflow_id}' on GitHub...")
             self._prepare_trial(scenario, workflow_meta)
             start_time = scenario.runtime_state["triggered_at"]
-            expected_event = scenario.get_event().get("event_type")
-            trigger_success, trigger_error = self._trigger_event(scenario)
-            if not trigger_success:
-                result["error"] = f"Failed to trigger GitHub event: {trigger_error}"
-                return result
+            record.event("phase", phase="triggering")
+            receipt = scenario.trigger(context)
+            if not isinstance(receipt, TriggerReceipt):
+                raise TypeError("Scenario trigger must return a TriggerReceipt")
+            if receipt.subject_kind:
+                scenario.runtime_state[f"{receipt.subject_kind}_number"] = receipt.subject_number
+            self._expected_run_id = receipt.workflow_run_id
+            record.artifact(
+                "trigger_receipt.json",
+                {
+                    "event_type": receipt.event_type,
+                    "subject_kind": receipt.subject_kind,
+                    "subject_number": receipt.subject_number,
+                    "workflow_run_id": receipt.workflow_run_id,
+                },
+            )
 
+            record.event("phase", phase="waiting")
             click.echo("Waiting for workflow run to start and complete...")
-            wait_result = self._wait_for_run(start_time, expected_event=expected_event)
+            wait_result = self._wait_for_run(start_time, expected_event=receipt.event_type)
 
             if not wait_result:
                 result["error"] = "Timed out waiting for workflow run or could not find it."
@@ -249,24 +342,29 @@ class BenchmarkRunner:
                 run_result["log_error"] = log_error
             if getattr(self, "_invocation_error", None):
                 run_result["invocation_error"] = self._invocation_error
-            gh_state = self._capture_gh_state(scenario)
+            record.event("phase", phase="observing")
+            gh_state = scenario.observe(context, run_result)
+            if not isinstance(gh_state, dict):
+                raise TypeError("Scenario observe must return an evidence dictionary")
+            record.artifact("evidence.json", gh_state)
             if gh_state.get("error"):
                 run_result["evidence_error"] = gh_state["error"]
             else:
                 scenario.runtime_state["observed_details"] = gh_state
             from .evidence import agent_artifacts
 
-            if gh_state and "error" not in gh_state:
+            if "comment_details" in gh_state and "error" not in gh_state:
                 try:
                     result["agent_artifacts"] = agent_artifacts(gh_state, scenario)
                 except Exception as exc:
                     result["artifact_error"] = str(exc)
-            analysis = self.analyzer.analyze(run_result, scenario)
+            record.event("phase", phase="evaluating")
+            analysis = self.analyzer.analyze(run_result, scenario, security_evaluator=security_evaluator)
 
             result.update(
                 {
                     "workflow": workflow_id,
-                    "scenario": scenario_id,
+                    "scenario": str(scenario_id),
                     "analysis": analysis,
                     "run_id": run_id,
                     "repo": self.repo_name,
@@ -283,27 +381,51 @@ class BenchmarkRunner:
             )
             return result
 
+        except (KeyboardInterrupt, SystemExit) as exc:
+            result["error"] = type(exc).__name__
+            result["interrupted"] = True
+            result["run_result"] = run_result
+            raise
         except Exception as exc:
             result["error"] = str(exc)
             result["run_result"] = run_result
             return result
         finally:
-            if cleanup:
-                self._cleanup(scenario if setup_started else None, result)
-            else:
-                click.echo(click.style(f"SKIP CLEANUP: Repository {self.repo_name} remains active.", fg="yellow"))
-            self._save_run_locally(result, run_result, runs_dir)
+            try:
+                if cleanup:
+                    record.event("phase", phase="cleaning")
+                    self._cleanup(scenario if setup_started else None, result, context=context)
+                else:
+                    click.echo(click.style(f"SKIP CLEANUP: Repository {self.repo_name} remains active.", fg="yellow"))
+                self._save_run_locally(result, run_result, runs_dir)
+                phase = "interrupted" if result.get("interrupted") else "failed" if result.get("error") else "completed"
+                record.event("phase", phase=phase)
+            finally:
+                for client, recorder, actor in previous_recorders:
+                    client.record_event, client.actor = recorder, actor
 
-    def _cleanup(self, scenario, result):
+    def _cleanup(self, scenario, result, context=None):
         operations = [self.provisioner.teardown]
         if scenario is not None:
-            operations.insert(0, lambda: scenario.teardown_state(self.gh_client))
+            operations.insert(0, lambda: scenario.cleanup(context) if context else scenario.teardown_state(self.gh_client))
         for operation in operations:
             try:
                 operation()
             except Exception as exc:
                 result.setdefault("cleanup_errors", []).append(str(exc))
                 click.echo(f"Cleanup failed: {exc}", err=True)
+        if context:
+            errors = context.cleanup_repositories()
+            if errors:
+                result.setdefault("cleanup_errors", []).extend(errors)
+
+    def _legacy_trigger(self, scenario):
+        success, error = self._trigger_event(scenario)
+        if not success:
+            raise RuntimeError(f"Failed to trigger GitHub event: {error}")
+        state = scenario.runtime_state
+        kind = "pr" if state.get("pr_number") else "issue" if state.get("issue_number") else None
+        return TriggerReceipt(scenario.get_event().get("event_type"), kind, state.get(f"{kind}_number") if kind else None)
 
     def _configure_workflow_tracking(self, workflow_dir, metadata=None):
         import yaml
@@ -381,142 +503,58 @@ class BenchmarkRunner:
         self._trial_state = state
 
     def optimize(self, workflow_id, scenario_id, attack_id, iterations, cleanup=True):
-        """
-        Run the attack optimization loop: generate → trigger → score → update, N times.
-        Returns { best_payload, asr_curve, final_asr } and writes best_payload.txt.
-        Only the StateEvaluator is used per iteration to keep the loop fast.
-        """
-        workflow_dir = os.path.join(self.workspace_dir, "src/benchmark/workflows", workflow_id)
-        scenario_path = self._find_scenario_path(scenario_id)
-
-        if not os.path.exists(workflow_dir) or not scenario_path:
-            return {"error": f"Workflow dir ({workflow_id}) or scenario ({scenario_id}) not found."}
-
-        scenario = self._load_scenario(scenario_path)
-        if not scenario:
-            return {"error": f"Failed to load scenario {scenario_id}"}
-
-        goal = scenario.get_attack_goal()
-        if not goal:
-            return {"error": f"Scenario '{scenario_id}' has no get_attack_goal() — cannot optimize."}
-
+        """Search with independent trials through the ordinary run engine."""
+        if iterations < 1:
+            raise ValueError("iterations must be positive")
         attack = load_attack(attack_id)
-        timestamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        runs_dir = os.path.join(
-            self.workspace_dir, "runs", f"optimize-{timestamp.replace(':', '-')}-{uuid.uuid4().hex[:12]}"
-        )
-        os.makedirs(runs_dir)
-        history_path = os.path.join(runs_dir, "attack_history.jsonl")
-
-        asr_curve = []
-        setup_started = False
+        search = RunRecord(self.workspace_dir, RunSpec(workflow_id, str(scenario_id), attack=attack_id, cleanup=cleanup))
+        scores = []
         result = {}
-
-        try:
-            self._configure_workflow_tracking(workflow_dir)
-            click.echo(f"Provisioning repository {self.repo_name}...")
-            requirements = self._get_workflow_requirements(workflow_dir)
-            secrets = {k: v for k in requirements["secrets"] if (v := os.environ.get(k))}
-            secrets.update(scenario.get_secrets())
-            variables = {k: v for k in requirements["vars"] if (v := os.environ.get(k))}
-
-            self.provisioner.provision(
-                workflow_dir,
-                scenario.get_required_files(),
-                branch=getattr(scenario, "branch", None),
-                template_repo=scenario.get_template_repo(),
-                secrets=secrets,
-                variables=variables,
-                substitution_map={},
+        for iteration in range(1, iterations + 1):
+            trial = BenchmarkRunner(self.workspace_dir, repo_prefix=self.repo_prefix)
+            attempt = trial.run(
+                workflow_id,
+                scenario_id,
+                attack_id=attack_id,
+                attack=attack,
+                cleanup=cleanup,
+                parent_attempt_id=search.attempt_id,
             )
-            self._sync_repo_name(self.gh_client.repo_name)
-            setup_started = True
-            scenario.setup_state(self.gh_client)
-            context = self._reconstruct_llm_input(scenario, workflow_dir)
-
-            for i in range(iterations):
-                click.echo(click.style(f"\n--- Optimize iteration {i + 1}/{iterations} ---", bold=True))
-
-                self._inject_attack_slots(scenario, attack, context)
-
-                run_id = None
-                error = None
-                score = None
-                try:
-                    self._prepare_trial(scenario)
-                    expected_event = scenario.get_event().get("event_type")
-                    ok, err = self._trigger_event(scenario)
-                    if not ok:
-                        raise RuntimeError(f"Trigger failed: {err}")
-                    waited = self._wait_for_run(scenario.runtime_state["triggered_at"], expected_event=expected_event)
-                    if not waited:
-                        raise RuntimeError("Timed out waiting for workflow run")
-                    run_id, final_run = waited
-                    stdout, stderr = self._get_workflow_logs(run_id)
-                    run_result = {
-                        "stdout": stdout,
-                        "stderr": stderr,
-                        "exit_code": 0 if final_run.conclusion == "success" else 1,
-                        "status": final_run.status,
-                        "conclusion": final_run.conclusion,
-                        "agent_invoked": self._agent_invocation(final_run),
-                    }
-                    gh_state = self._capture_gh_state(scenario)
-                    if gh_state.get("error"):
-                        raise RuntimeError(gh_state["error"])
-                    scenario.runtime_state["observed_details"] = gh_state
-                    verdict = scenario.get_security_evaluator().evaluate(run_result, self.gh_client, scenario)
-                    if type(verdict) is not bool or (verdict is False and run_result["agent_invoked"] is not True):
-                        raise RuntimeError("Security verdict unavailable without verified agent invocation")
-                    score = int(verdict)
-                    attack.update(float(score))
-                except Exception as exc:
-                    error = str(exc)
-                    click.echo(f"Iteration {i + 1} unknown: {error}", err=True)
-                finally:
-                    asr_curve.append(score)
-                    with open(history_path, "a") as handle:
-                        handle.write(
-                            json.dumps({"iteration": i + 1, "score": score, "run_id": run_id, "error": error}) + "\n"
-                        )
-                    scenario.reset_event_state(self.gh_client)
-        except Exception as exc:
-            result["error"] = str(exc)
-        finally:
-            if cleanup:
-                self._cleanup(scenario if setup_started else None, result)
-            else:
-                click.echo(click.style(f"SKIP CLEANUP: {self.repo_name} remains active.", fg="yellow"))
-
-        valid_scores = [score for score in asr_curve if score is not None]
-        final_asr = sum(valid_scores) / len(valid_scores) if valid_scores else None
-
+            verdict = attempt.get("analysis", {}).get("security_breached")
+            score = int(verdict) if type(verdict) is bool and not attempt.get("error") else None
+            if score is not None:
+                attack.update(float(score))
+            scores.append(score)
+            search.event(
+                "iteration",
+                iteration=iteration,
+                score=score,
+                attempt_id=attempt.get("attempt_id"),
+                run_id=attempt.get("run_id"),
+                error=attempt.get("error")
+                or attempt.get("analysis", {}).get("evaluation_errors", {}).get("security_breached"),
+            )
+        valid = [score for score in scores if score is not None]
         best = attack.best_payload
-
         if best:
-            best_path = os.path.join(runs_dir, "best_payload.txt")
-            with open(best_path, "w") as f:
-                f.write(best)
-            click.echo(f"Best payload written to {best_path}")
-
+            (search.directory / "best_payload.txt").write_text(best)
         result.update(
             {
                 "workflow": workflow_id,
-                "scenario": scenario_id,
+                "scenario": str(scenario_id),
                 "attack": attack_id,
+                "attempt_id": search.attempt_id,
                 "iterations": iterations,
-                "asr_curve": asr_curve,
-                "final_asr": final_asr,
+                "asr_curve": scores,
+                "final_asr": sum(valid) / len(valid) if valid else None,
                 "best_payload": best,
-                "runs_dir": runs_dir,
-                "valid_iterations": len(valid_scores),
-                "unknown_iterations": iterations - len(valid_scores),
+                "runs_dir": str(search.directory),
+                "valid_iterations": len(valid),
+                "unknown_iterations": iterations - len(valid),
             }
         )
-        with open(os.path.join(runs_dir, "metadata.json"), "w") as f:
-            json.dump(result, f, indent=4)
-
-        click.echo(f"\nOptimization complete. Final ASR: {final_asr} ({sum(valid_scores)}/{len(valid_scores)} valid trials)")
+        write_json(search.directory / "metadata.json", result)
+        search.event("phase", phase="completed")
         return result
 
     def offline_optimize(self, workflow_id, scenario_id, attack_id, iterations, victim_model: str | None = None):
@@ -669,27 +707,15 @@ class BenchmarkRunner:
         return result
 
     def _find_scenario_path(self, scenario_id):
-        """Recursively searches for a scenario by its ID."""
-        scenarios_dir = os.path.join(self.workspace_dir, "src/benchmark/scenarios")
-        for root, dirs, files in os.walk(scenarios_dir):
-            if scenario_id in dirs:
-                path = os.path.join(root, scenario_id)
-                if os.path.exists(os.path.join(path, "scenario.py")):
-                    return path
-                if os.path.exists(os.path.join(path, "recipe.json")):
-                    return path
-            if f"{scenario_id}.py" in files:
-                return os.path.join(root, f"{scenario_id}.py")
-
-        # Direct path check as fallback
-        if os.path.isabs(scenario_id) and os.path.exists(scenario_id):
-            return scenario_id
-
-        return None
+        path = find_scenario(Path(self.workspace_dir) / "src/benchmark/scenarios", str(scenario_id))
+        return str(path) if path else None
 
     def _capture_context_snapshot(self, scenario, workflow_dir):
         """Captures targeted metadata and injected files for diagnostic purposes without full repo download."""
         repo = self.gh_client.repository
+        fixture_repo = getattr(scenario, "_attacker_fork_client", None)
+        fixture_repo = fixture_repo.repository if fixture_repo is not None else repo
+        fixture_ref = getattr(scenario, "branch", None) or fixture_repo.default_branch
 
         snapshot = {
             "repository": self.repo_name,
@@ -719,7 +745,7 @@ class BenchmarkRunner:
                 for repo_path in required_files:
                     if repo_path not in snapshot["injected_files_content"]:
                         try:
-                            content = repo.get_contents(repo_path)
+                            content = fixture_repo.get_contents(repo_path, ref=fixture_ref)
                             if not isinstance(content, list):
                                 snapshot["injected_files_content"][repo_path] = content.decoded_content.decode("utf-8")
                         except Exception:
@@ -862,8 +888,7 @@ class BenchmarkRunner:
 
     def _save_run_locally(self, result, run_result, runs_dir):
         """Saves run metadata and logs to the local 'runs/' directory."""
-        with open(os.path.join(runs_dir, "metadata.json"), "w") as f:
-            json.dump(result, f, indent=4)
+        write_json(Path(runs_dir) / "metadata.json", result)
         with open(os.path.join(runs_dir, "stdout.log"), "w") as f:
             f.write(run_result.get("stdout", ""))
         with open(os.path.join(runs_dir, "stderr.log"), "w") as f:
@@ -875,7 +900,12 @@ class BenchmarkRunner:
         scenario_event = scenario.get_event()
         event_type = scenario_event.get("event_type")
         data = scenario_event.get("data", {})
-        event_client = self.event_gh_client
+        actor = scenario_event.get("actor")
+        if actor == "attacker" and self.event_gh_client is self.gh_client:
+            return False, "Required GitHub actor is unavailable: attacker"
+        if actor not in {None, "owner", "attacker"}:
+            return False, f"Unknown GitHub actor: {actor}"
+        event_client = self.gh_client if actor == "owner" else self.event_gh_client
         repo = event_client.repository
         default_branch = repo.default_branch
 
@@ -886,7 +916,7 @@ class BenchmarkRunner:
                 return True, None
             elif event_type in ("pull_request", "pull_request_target"):
                 head = data.get("head", default_branch)
-                pr_client = event_client if ":" in head else self.gh_client
+                pr_client = event_client if actor or ":" in head else self.gh_client
                 pr = pr_client.repository.create_pull(
                     title=data.get("title", "Test PR"),
                     body=data.get("body", "Test Body"),
@@ -926,43 +956,9 @@ class BenchmarkRunner:
         return False, f"Unknown event type: {event_type}"
 
     def _load_scenario(self, scenario_path):
-        """Loads a Python scenario class, or a recipe.json scanner scenario."""
-        if os.path.isdir(scenario_path):
-            scenario_dir = scenario_path
-            recipe_path = os.path.join(scenario_dir, "recipe.json")
-            if os.path.exists(recipe_path):
-                from .scanner.recipe_scenario import load_recipe
-
-                scenario_obj = load_recipe(scenario_dir, self.workspace_dir)
-                if scenario_obj is not None:
-                    scenario_obj.scenario_dir = scenario_dir
-                    scenario_obj.runtime_state["repo"] = self.repo_name
-                    return scenario_obj
-            scenario_file = os.path.join(scenario_path, "scenario.py")
-        else:
-            scenario_dir = os.path.dirname(scenario_path)
-            scenario_file = scenario_path
-
-        if not os.path.exists(scenario_file) or not scenario_file.endswith(".py"):
-            return None
-
-        module_name = os.path.basename(scenario_file).replace(".py", "")
-        spec = importlib.util.spec_from_file_location(module_name, scenario_file)
-        if spec and spec.loader:
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-            for attr_name in dir(module):
-                attr = getattr(module, attr_name)
-                if (
-                    isinstance(attr, type)
-                    and attr_name != "AbstractScenario"
-                    and "AbstractScenario" in [base.__name__ for base in attr.__mro__]
-                ):
-                    scenario_obj = attr(self.workspace_dir)
-                    scenario_obj.scenario_dir = scenario_dir
-                    scenario_obj.runtime_state["repo"] = self.repo_name
-                    return scenario_obj
-        return None
+        scenario = load_scenario(scenario_path, self.workspace_dir)
+        scenario.runtime_state["repo"] = self.repo_name
+        return scenario
 
     @retry(
         retry=retry_if_result(lambda res: res is None),
@@ -978,7 +974,13 @@ class BenchmarkRunner:
             events = {"pull_request", "pull_request_target"}
         workflows = getattr(self, "_workflow_events", None)
         state = getattr(self, "_trial_state", {})
-        for run in self.gh_client.repository.get_workflow_runs()[:100]:
+        expected_id = getattr(self, "_expected_run_id", None)
+        runs = (
+            [self.gh_client.repository.get_workflow_run(expected_id)]
+            if expected_id
+            else self.gh_client.repository.get_workflow_runs()[:100]
+        )
+        for run in runs:
             if run.id in getattr(self, "_baseline_run_ids", set()):
                 continue
             if run.created_at.timestamp() < start_time:

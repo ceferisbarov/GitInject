@@ -11,6 +11,8 @@ def load_attack(attack_id: str, payload: str | None = None, payload_file: str | 
     where needed (e.g. OPENROUTER_API_KEY, ATTACK_VICTIM_MODEL).
     """
     if attack_id == "static":
+        if payload is not None and payload_file is None and os.path.isfile(payload):
+            payload, payload_file = None, payload
         return StaticAttack(payload=payload, payload_file=payload_file)
 
     if attack_id == "autoinject":

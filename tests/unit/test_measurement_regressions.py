@@ -517,51 +517,71 @@ def test_no_effective_attack_slot_is_rejected_before_generation():
     attack.generate.assert_not_called()
 
 
-def test_optimizer_unpacks_run_and_excludes_evaluation_errors(tmp_path):
+def test_optimizer_uses_fresh_normal_runs_and_excludes_evaluation_errors(tmp_path):
     workflow = tmp_path / "src/benchmark/workflows/wf"
     workflow.mkdir(parents=True)
     (workflow / "main.yml").write_text(
         "on: issues\njobs:\n  review:\n    steps:\n      - name: Run Codex\n        uses: openai/codex-action@v1\n"
     )
-    with patch("src.benchmark.runner.GitHubClient"):
-        runner = BenchmarkRunner(str(tmp_path), repo_prefix="owner/trial")
-    runner.gh_client.repo_name = runner.repo_name
-    runner.gh_client.get_authenticated_user_login.return_value = "owner"
-    runner.gh_client.repository.get_workflow_runs.return_value = []
-    scenario = RecipeScenario(str(tmp_path), hypothesis())
-    scenario.get_injection_slots = lambda: {"body": "{{INJECTION}}"}
-    scenario.get_security_evaluator = lambda: StateEvaluator(check)
+    owner = MagicMock()
+    runner = BenchmarkRunner(str(tmp_path), repo_prefix="owner/trial", gh_client=owner, event_gh_client=owner)
     check = MagicMock(side_effect=[RuntimeError("evaluation unavailable"), False, True])
-    runner._find_scenario_path = MagicMock(return_value="unused")
-    runner._load_scenario = MagicMock(return_value=scenario)
-    runner.provisioner = MagicMock()
-    runner._reconstruct_llm_input = MagicMock(return_value="context")
-    runner._trigger_event = MagicMock(return_value=(True, None))
-    final_run = SimpleNamespace(
-        status="completed",
-        conclusion="success",
-        jobs=lambda: [
-            SimpleNamespace(
-                name="review", steps=[SimpleNamespace(name="Run Codex", status="completed", conclusion="success")]
-            )
-        ],
-    )
-    runner._wait_for_run = MagicMock(side_effect=[(11, final_run), (12, final_run), (13, final_run)])
-    runner._get_workflow_logs = MagicMock(return_value=("logs", ""))
-    runner._capture_gh_state = MagicMock(return_value={})
+    trials = []
+
+    def make_trial(*args, **kwargs):
+        owner = MagicMock()
+        owner.get_authenticated_user_login.return_value = "owner"
+        owner.repository.get_workflow_runs.return_value = []
+        trial = BenchmarkRunner(*args, **kwargs, gh_client=owner, event_gh_client=owner)
+        scenario = RecipeScenario(str(tmp_path), hypothesis())
+        scenario.get_injection_slots = lambda: {"body": "{{INJECTION}}"}
+        scenario.get_security_evaluator = lambda: StateEvaluator(check)
+        trial._find_scenario_path = MagicMock(return_value="unused")
+        trial._load_scenario = MagicMock(return_value=scenario)
+        trial.provisioner = MagicMock()
+        trial._reconstruct_llm_input = MagicMock(return_value="context")
+        trial._capture_context_snapshot = MagicMock(return_value={})
+        trial._trigger_event = MagicMock(return_value=(True, None))
+        final_run = SimpleNamespace(
+            status="completed",
+            conclusion="success",
+            jobs=lambda: [
+                SimpleNamespace(
+                    name="review", steps=[SimpleNamespace(name="Run Codex", status="completed", conclusion="success")]
+                )
+            ],
+        )
+        trial._wait_for_run = MagicMock(return_value=(11 + len(trials), final_run))
+        trial._get_workflow_logs = MagicMock(return_value=("logs", ""))
+        trial._get_billable_minutes = MagicMock(return_value=0)
+        trial._capture_gh_state = MagicMock(return_value={})
+        trials.append(trial)
+        return trial
+
     attack = MagicMock()
     attack.generate.return_value = "payload"
     attack.best_payload = None
-    with patch("src.benchmark.runner.load_attack", return_value=attack):
+    with (
+        patch("src.benchmark.runner.load_attack", return_value=attack),
+        patch(
+            "src.benchmark.runner.BenchmarkRunner",
+            side_effect=make_trial,
+        ),
+    ):
         result = runner.optimize("wf", "candidate", "static", 3)
     assert result["asr_curve"] == [None, 0, 1]
     assert result["final_asr"] == 0.5
     assert result["valid_iterations"] == 2
     assert result["unknown_iterations"] == 1
-    assert [call.args[0] for call in runner._get_workflow_logs.call_args_list] == [11, 12, 13]
+    assert [trial._get_workflow_logs.call_args.args[0] for trial in trials] == [11, 12, 13]
     assert [call.args[0] for call in attack.update.call_args_list] == [0.0, 1.0]
-    history = [json.loads(line) for line in (Path(result["runs_dir"]) / "attack_history.jsonl").read_text().splitlines()]
+    for trial in trials:
+        trial.provisioner.provision.assert_called_once()
+        trial.provisioner.teardown.assert_called_once()
+    history = [json.loads(line) for line in (Path(result["runs_dir"]) / "events.jsonl").read_text().splitlines()]
+    history = [entry for entry in history if entry["kind"] == "iteration"]
     assert [entry["run_id"] for entry in history] == [11, 12, 13]
+    assert len({entry["attempt_id"] for entry in history}) == 3
     assert "evaluation unavailable" in history[0]["error"]
 
 

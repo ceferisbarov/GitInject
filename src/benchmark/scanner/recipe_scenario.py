@@ -10,7 +10,7 @@ from ..evaluators import EvaluationError, LLMEvaluator, StateEvaluator, Unconfig
 from ..evidence import agent_comments, target_details
 from ..scenario_base import AbstractScenario
 from ..utils.types import ScenarioType, WorkflowCategory
-from .primitives import PRIMITIVES
+from .primitives import PRIMITIVES, validate_hypothesis
 from .types import AttackHypothesis, hypothesis_from_dict, hypothesis_to_dict
 
 _CATEGORY_MAP = {
@@ -129,7 +129,9 @@ class RecipeScenario(AbstractScenario):
         trigger = self.hypothesis.trigger
         if trigger is None:
             return {"event_type": "pull_request", "data": {}}
-        return {"event_type": trigger.event_type, "data": dict(trigger.data or {})}
+        data = dict(trigger.data or {})
+        data.update(self._injected)
+        return {"event_type": trigger.event_type, "data": data}
 
     def get_attack_goal(self) -> str | None:
         return self.hypothesis.attack_goal
@@ -206,6 +208,9 @@ def load_recipe(scenario_dir: str, workspace_dir: str) -> RecipeScenario | None:
     with open(recipe_path) as f:
         payload = json.load(f)
     hypothesis = hypothesis_from_dict(payload["hypothesis"])
+    errors = validate_hypothesis(hypothesis)
+    if errors:
+        raise ValueError("Invalid recipe: " + "; ".join(errors))
     return RecipeScenario(
         workspace_dir,
         hypothesis,
