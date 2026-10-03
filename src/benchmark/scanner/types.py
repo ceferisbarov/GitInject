@@ -60,6 +60,10 @@ class ValidationResult:
     billable_minutes: float
     wall_seconds: float
     evaluator_correction: str | None = None
+    recipe_path: str | None = None
+    attempted_runs: int = 0
+    invalid_runs: int = 0
+    diagnostics: list[dict] = field(default_factory=list)
 
 
 # Model pricing in (input $/MTok, output $/MTok). Verified 2026-05 against

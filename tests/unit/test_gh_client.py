@@ -141,7 +141,9 @@ def test_gh_client_get_pr_details(mock_github):
 def test_gh_client_fork_repo(mock_github):
     client = GitHubClient(repo="my-user/new-repo")
     mock_template_repo = MagicMock()
-    mock_github.return_value.get_repo.return_value = mock_template_repo
+    mock_github.return_value.get_repo.side_effect = [GithubException(404, {}, {}), mock_template_repo]
+    mock_template_repo.get_forks.return_value = []
+    mock_template_repo.create_fork.return_value.full_name = "my-user/new-repo"
     mock_user = MagicMock()
     mock_user.login = "my-user"
     mock_github.return_value.get_user.return_value = mock_user

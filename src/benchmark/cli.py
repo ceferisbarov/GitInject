@@ -221,33 +221,38 @@ def _display_run_result(result):
     else:
         click.echo("\n" + click.style("--- Benchmark Evaluation ---", bold=True))
         analysis = result.get("analysis", {})
-        click.echo(f"Utility Achieved : {analysis.get('utility_achieved', False)}")
-        click.echo(f"Security Breached: {analysis.get('security_breached', False)}")
-        click.echo(f"Autonomy Achieved: {analysis.get('autonomy_achieved', False)}")
+        for label, key in (
+            ("Utility Achieved", "utility_achieved"),
+            ("Security Breached", "security_breached"),
+            ("Autonomy Achieved", "autonomy_achieved"),
+        ):
+            value = analysis.get(key)
+            click.echo(f"{label}: {value if value is not None else 'unknown'}")
+        for metric, error in analysis.get("evaluation_errors", {}).items():
+            click.echo(f"  {metric}: {error}")
         click.echo(click.style("----------------------------", bold=True))
         click.echo(f"Message: {result.get('message')}")
 
 
-def _display_repeat_summary(pairs_results: dict[tuple, list]):
-    """Print aggregated security/utility/autonomy rates for repeated runs.
+def _metric_summary(results, key, *, invert=False):
+    values = [r.get("analysis", {}).get(key) for r in results if "error" not in r]
+    known = [value for value in values if type(value) is bool]
+    if not known:
+        return "N/A (0/0)"
+    positives = sum(value is (False if invert else True) for value in known)
+    return f"{positives / len(known):.2f} ({positives}/{len(known)})"
 
-    pairs_results: {(workflow, scenario): [result, ...]}
-    """
+
+def _display_repeat_summary(pairs_results: dict[tuple, list]):
+    """Report each metric using its own known-verdict denominator."""
     click.echo("\n" + click.style("--- Repeat Summary ---", bold=True))
-    header = f"{'Workflow':<25} {'Scenario':<30} {'Security':<10} {'Utility':<10} {'Autonomy':<10} {'N':<5}"
-    click.echo(click.style(header, bold=True))
-    click.echo("-" * 95)
+    click.echo(f"{'Workflow':<25} {'Scenario':<30} {'Security':<18} {'Utility':<18} {'Autonomy':<18} {'Attempts':<9}")
     for (wf, sc), results in sorted(pairs_results.items()):
-        n = len(results)
-        successful = [r for r in results if "error" not in r]
-        if not successful:
-            click.echo(f"{wf:<25} {sc:<30} {'N/A':<10} {'N/A':<10} {'N/A':<10} {n:<5}")
-            continue
-        sec_rate = sum(1 for r in successful if not r.get("analysis", {}).get("security_breached")) / n
-        util_rate = sum(1 for r in successful if r.get("analysis", {}).get("utility_achieved")) / n
-        auto_rate = sum(1 for r in successful if r.get("analysis", {}).get("autonomy_achieved")) / n
-        click.echo(f"{wf:<25} {sc:<30} {sec_rate:<10.2f} {util_rate:<10.2f} {auto_rate:<10.2f} {n:<5}")
-    click.echo(click.style("----------------------", bold=True))
+        sec = _metric_summary(results, "security_breached", invert=True)
+        util = _metric_summary(results, "utility_achieved")
+        auto = _metric_summary(results, "autonomy_achieved")
+        click.echo(f"{wf:<25} {sc:<30} {sec:<18} {util:<18} {auto:<18} {len(results):<9}")
+    click.echo("Ratios exclude unknown verdicts and execution errors; Attempts includes all runs.")
 
 
 @cli.command(name="run-suite")
@@ -398,11 +403,15 @@ def preflight(workflow, scenario, attack_id, victim_model):
         click.echo(click.style(f"Error: {result['error']}", fg="red"))
         return
 
-    score = result["asr_curve"][0] if result["asr_curve"] else 0
+    score = result["asr_curve"][0] if result["asr_curve"] else None
     label = (
-        click.style("PASS — attack worked offline", fg="green")
-        if score
-        else click.style("FAIL — attack did not work offline", fg="red")
+        click.style("UNKNOWN — offline trial could not be scored", fg="yellow")
+        if score is None
+        else (
+            click.style("PASS — attack worked offline", fg="green")
+            if score
+            else click.style("FAIL — attack did not work offline", fg="red")
+        )
     )
     click.echo(f"\nPreflight result: {label}")
     click.echo(f"Payload at: {result['runs_dir']}/best_payload.txt")
@@ -457,7 +466,8 @@ def optimize(workflow, scenario, attack_id, iterations, offline, victim_model, r
         return
 
     click.echo("\n" + click.style("--- Optimization Result ---", bold=True))
-    click.echo(f"Final ASR : {result['final_asr']:.2f} ({sum(result['asr_curve'])}/{len(result['asr_curve'])})")
+    scores = [score for score in result["asr_curve"] if score is not None]
+    click.echo(f"Final ASR : {result['final_asr']} ({sum(scores)}/{len(scores)} valid trials)")
     click.echo(f"ASR curve : {result['asr_curve']}")
     click.echo(f"Runs dir  : {result['runs_dir']}")
     if result.get("best_payload"):
@@ -514,38 +524,19 @@ def report(aggregate):
         return
 
     if aggregate:
-        click.echo(click.style(f"{'Workflow':<25} {'Security':<10} {'Utility':<10} {'Autonomy':<10} {'Runs':<5}", bold=True))
-        echo_line = "-" * 65
-        click.echo(echo_line)
-
-        stats = {}
-        run_folders = [d for d in os.listdir(runs_dir) if os.path.isdir(os.path.join(runs_dir, d))]
-        for folder in run_folders:
+        pairs = {}
+        for folder in os.listdir(runs_dir):
             metadata_path = os.path.join(runs_dir, folder, "metadata.json")
-            if os.path.exists(metadata_path):
-                with open(metadata_path, "r") as f:
-                    try:
-                        data = json.load(f)
-                        wf = data.get("workflow")
-                        analysis = data.get("analysis", {})
-
-                        if wf not in stats:
-                            stats[wf] = {"security": 0, "utility": 0, "autonomy": 0, "count": 0}
-
-                        # Security: 1 if NOT breached
-                        stats[wf]["security"] += 1 if not analysis.get("security_breached") else 0
-                        stats[wf]["utility"] += 1 if analysis.get("utility_achieved") else 0
-                        stats[wf]["autonomy"] += 1 if analysis.get("autonomy_achieved") else 0
-                        stats[wf]["count"] += 1
-                    except (json.JSONDecodeError, KeyError):
-                        continue
-
-        for wf, s in sorted(stats.items()):
-            # Security score: percentage of runs NOT breached (1.0 = perfect)
-            avg_sec = s["security"] / s["count"]
-            avg_util = s["utility"] / s["count"]
-            avg_auto = s["autonomy"] / s["count"]
-            click.echo(f"{wf:<25} {avg_sec:<10.2f} {avg_util:<10.2f} {avg_auto:<10.2f} {s['count']:<5}")
+            if not os.path.isfile(metadata_path):
+                continue
+            try:
+                with open(metadata_path) as handle:
+                    data = json.load(handle)
+            except json.JSONDecodeError:
+                continue
+            if data.get("workflow") and ("analysis" in data or "error" in data):
+                pairs.setdefault((data["workflow"], "all scenarios"), []).append(data)
+        _display_repeat_summary(pairs)
 
     else:
         header = f"{'Timestamp':<25} {'Workflow':<20} {'Scenario':<25} {'Util':<6} {'Sec':<6} {'Auto':<6}"
@@ -560,14 +551,23 @@ def report(aggregate):
                 with open(metadata_path, "r") as f:
                     try:
                         data = json.load(f)
+                        if "analysis" not in data and "error" not in data:
+                            continue
                         analysis = data.get("analysis", {})
+
+                        def verdict_label(key, invert=False):
+                            value = analysis.get(key)
+                            if type(value) is not bool:
+                                return "?"
+                            return "T" if value is (False if invert else True) else "F"
+
                         click.echo(
-                            f"{data.get('timestamp'):<25} "
+                            f"{data.get('timestamp', folder):<25} "
                             f"{data.get('workflow'):<20} "
-                            f"{data.get('scenario'):<25} "
-                            f"{'T' if analysis.get('utility_achieved') else 'F':<6} "
-                            f"{'T' if not analysis.get('security_breached') else 'F':<6} "
-                            f"{'T' if analysis.get('autonomy_achieved') else 'F':<6}"
+                            f"{str(data.get('scenario', '')):<25} "
+                            f"{verdict_label('utility_achieved'):<6} "
+                            f"{verdict_label('security_breached', True):<6} "
+                            f"{verdict_label('autonomy_achieved'):<6}"
                         )
                     except (json.JSONDecodeError, KeyError):
                         pass

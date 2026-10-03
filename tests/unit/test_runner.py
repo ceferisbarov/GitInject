@@ -12,7 +12,7 @@ def runner():
         # Mock GitHub user for _generate_repo_name
         mock_user = MagicMock()
         mock_user.login = "testuser"
-        mock_client.return_value.gh.get_user.return_value = mock_user
+        mock_client.return_value.get_authenticated_user_login.return_value = mock_user.login
         return BenchmarkRunner(workspace_dir="/tmp", repo_prefix="test-repo")
 
 
@@ -26,7 +26,7 @@ def test_generate_repo_name_without_owner(runner):
     with patch("src.benchmark.runner.GitHubClient") as mock_client:
         mock_user = MagicMock()
         mock_user.login = "resolved-user"
-        mock_client.return_value.gh.get_user.return_value = mock_user
+        mock_client.return_value.get_authenticated_user_login.return_value = mock_user.login
         r = BenchmarkRunner(workspace_dir="/tmp", repo_prefix="my-bench")
         assert r.repo_name.startswith("resolved-user/my-bench-")
 
@@ -44,15 +44,8 @@ def test_poll_for_completion_success(runner):
     mock_repo.get_workflow_runs.return_value = [mock_run]
     runner.gh_client.repository = mock_repo
 
-    # First call: sets _last_run_count and returns None for quiescence
-    res = runner._wait_for_run.__wrapped__(runner, mock_run.created_at.timestamp() - 5, expected_event="pull_request")
-    assert res is None
-    assert runner._last_run_count == 1
-
-    # Second call: returns the run ID
-    run_id = runner._wait_for_run.__wrapped__(runner, mock_run.created_at.timestamp() - 5, expected_event="pull_request")
-    assert run_id == 12345
-    assert not hasattr(runner, "_last_run_count")
+    result = runner._wait_for_run.__wrapped__(runner, mock_run.created_at.timestamp() - 5, expected_event="pull_request")
+    assert result == (12345, mock_run)
 
 
 def test_poll_for_completion_multiple_runs(runner):
@@ -83,16 +76,8 @@ def test_poll_for_completion_multiple_runs(runner):
     mock_repo.get_workflow_runs.return_value = [run_b, run_a]
     runner.gh_client.repository = mock_repo
 
-    # First call for quiescence
-    res = runner._wait_for_run.__wrapped__(runner, now.timestamp() - 5, expected_event="pull_request")
-    assert res is None
-    assert runner._last_run_count == 2
-
-    # Second call returns run_a (matching pull_request)
-    run_id = runner._wait_for_run.__wrapped__(runner, now.timestamp() - 5, expected_event="pull_request")
-
-    # Should pick run_a (matching pull_request)
-    assert run_id == 111
+    result = runner._wait_for_run.__wrapped__(runner, now.timestamp() - 5, expected_event="pull_request")
+    assert result == (111, run_a)
 
 
 def test_poll_for_completion_waits_for_all(runner):
@@ -136,13 +121,7 @@ def test_poll_for_completion_ignores_old_runs(runner):
     mock_repo.get_workflow_runs.return_value = [mock_run]
     runner.gh_client.repository = mock_repo
 
-    # Should timeout because it ignores old runs (returns None in retry loop which stop_after_attempt eventually breaks)
-    # We can mock the retry to stop faster
-    with patch("src.benchmark.runner.wait_exponential", return_value=MagicMock()):
-        # Mocking the retry behavior to just return None instead of looping 60 times
-        with patch.object(runner, "_wait_for_run", return_value=None):
-            run_id = runner._wait_for_run(now.timestamp())
-            assert run_id is None
+    assert runner._wait_for_run.__wrapped__(runner, now.timestamp()) is None
 
 
 def test_get_workflow_requirements_standard(runner, tmp_path):

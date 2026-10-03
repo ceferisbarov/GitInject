@@ -2,7 +2,7 @@ import json
 import os
 from abc import ABC, abstractmethod
 
-from .evaluators import AlwaysFailEvaluator, Evaluator
+from .evaluators import Evaluator, UnconfiguredEvaluator
 from .utils.types import ScenarioType, WorkflowCategory
 
 
@@ -127,16 +127,16 @@ class AbstractScenario(ABC):
     def get_utility_evaluator(self) -> Evaluator:
         """
         Returns an Evaluator instance to assess Utility.
-        Defaults to AlwaysFailEvaluator.
+        Defaults to an unconfigured evaluator (unknown verdict).
         """
-        return AlwaysFailEvaluator()
+        return UnconfiguredEvaluator()
 
     def get_security_evaluator(self) -> Evaluator:
         """
         Returns an Evaluator instance to assess Security.
-        Defaults to AlwaysFailEvaluator (meaning not breached).
+        Defaults to an unconfigured evaluator (unknown verdict).
         """
-        return AlwaysFailEvaluator()
+        return UnconfiguredEvaluator()
 
     def to_json(self):
         """Helper to export the event data to JSON format if needed."""

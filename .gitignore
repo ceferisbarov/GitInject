@@ -17,6 +17,11 @@ plans/*
 !plans/scenarios.md
 notebooks/
 runs/
+reports/
 actions/
 GEMINI.md
 attacks/*
+.env
+
+# Papers
+*.pdf

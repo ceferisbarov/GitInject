@@ -2,18 +2,19 @@ from __future__ import annotations
 
 import os
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 import click
 
 from . import diagnostics
 from .diagnostics import (
+    FAILURE_EVALUATION,
     FAILURE_INFRASTRUCTURE,
-    FAILURE_PAYLOAD_INEFFECTIVE,
     FAILURE_REFUSED,
 )
-from .recipe_scenario import delete_recipe, write_recipe
-from .types import AttackHypothesis, EffectivePromptContext, ValidationResult, hypothesis_to_dict
+from .recipe_scenario import write_recipe
+from .types import AttackHypothesis, EffectivePromptContext, ValidationResult
 
 
 def _evaluator_type(hypothesis: AttackHypothesis) -> str:
@@ -41,7 +42,7 @@ def _run_single(
     runner = BenchmarkRunner(os.getcwd(), repo_prefix=repo_prefix)
     scenario_id = Path(scenario_path).parent.name
     click.echo(f"  Live run: {workflow_id} × {scenario_id} → {runner.repo_name}")
-    return runner.run(workflow_id, scenario_id, cleanup=cleanup)
+    return runner.run(workflow_id, str(Path(scenario_path).resolve().parent), cleanup=cleanup)
 
 
 def validate(
@@ -61,6 +62,8 @@ def validate(
 ) -> list[ValidationResult]:
     from .memory import CrossWorkflowMemory
 
+    if runs_per_hypothesis < 1:
+        raise ValueError("runs_per_hypothesis must be positive")
     memory = CrossWorkflowMemory()
     results: list[ValidationResult] = []
     negative_feedback: list[dict] = []
@@ -101,6 +104,8 @@ def validate(
             last_failure_reason: str | None = None
             last_feedback_signal: dict | None = None
             evaluator_correction: str | None = None
+            memory_allowed = True
+            run_diagnostics = []
             billable_minutes_total = 0.0
             t_start = time.monotonic()
 
@@ -121,23 +126,16 @@ def validate(
                         diagnostic_model=diagnostic_model,
                     )
                 else:
-                    analysis = run_result.get("analysis") or {}
-                    breached = bool(analysis.get("security_breached"))
-                    diag = diagnostics.DiagnosticResult(
-                        failure_reason=None if breached else FAILURE_PAYLOAD_INEFFECTIVE,
-                        counts_as_success=breached,
-                        write_to_memory=True,
-                        feedback_signal=None
-                        if breached
-                        else {
-                            "attack_goal": hypothesis.attack_goal,
-                            "failed_recipe": hypothesis_to_dict(hypothesis),
-                            "failure_reason": FAILURE_PAYLOAD_INEFFECTIVE,
-                        },
-                    )
+                    diag = diagnostics.classify_run(run_result, hypothesis, evaluator_type, enable_artifact_inspection=False)
 
-                if diag.failure_reason == FAILURE_INFRASTRUCTURE:
+                if run_result.get("run_id"):
+                    run_ids.append(str(run_result["run_id"]))
+                memory_allowed = memory_allowed and diag.write_to_memory
+                run_diagnostics.append({"run_id": run_result.get("run_id"), **asdict(diag)})
+
+                if diag.failure_reason in (FAILURE_INFRASTRUCTURE, FAILURE_EVALUATION):
                     infra_errors += 1
+                    last_failure_reason = diag.failure_reason
                     click.echo(f"    Run {run_idx + 1}: infrastructure_error — {diag.suggested_fix}")
                     continue
 
@@ -150,12 +148,9 @@ def validate(
                 if diag.feedback_signal:
                     last_feedback_signal = diag.feedback_signal
 
-                run_id = run_result.get("run_id", f"unknown-{run_idx}")
-                run_ids.append(str(run_id))
-
             wall_seconds = time.monotonic() - t_start
             effective_runs = runs_per_hypothesis - infra_errors
-            confirmed = effective_runs > 0 and successes == effective_runs
+            confirmed = runs_per_hypothesis > 0 and successes == runs_per_hypothesis and infra_errors == 0
 
             if confirmed:
                 status = "confirmed"
@@ -189,7 +184,9 @@ def validate(
                 else:
                     status = "unconfirmed"
                     mitigation = ""
-                    if failure_reason != FAILURE_REFUSED:
+                    if not memory_allowed:
+                        pass
+                    elif failure_reason != FAILURE_REFUSED:
                         memory.record(
                             ValidationResult(
                                 hypothesis=hypothesis,
@@ -227,7 +224,7 @@ def validate(
                             provider=context.provider,
                             workflow_id=workflow_id,
                         )
-                    delete_recipe(hypothesis.id)
+                    click.echo(f"    Candidate retained at {scenario_path}")
                     click.echo(f"    unconfirmed ({successes}/{effective_runs}) — {failure_reason}")
 
                 if last_feedback_signal and iteration < iterations:
@@ -248,6 +245,10 @@ def validate(
                     billable_minutes=billable_minutes_total,
                     wall_seconds=wall_seconds,
                     evaluator_correction=evaluator_correction,
+                    recipe_path=scenario_path,
+                    attempted_runs=runs_per_hypothesis,
+                    invalid_runs=infra_errors,
+                    diagnostics=run_diagnostics,
                 )
             )
 

@@ -1,6 +1,7 @@
 import click
 
 from src.benchmark.evaluators import AlwaysFailEvaluator, StateEvaluator
+from src.benchmark.evidence import agent_comments, target_details
 from src.benchmark.scenario_base import AbstractScenario
 from src.benchmark.utils.types import ScenarioType, WorkflowCategory
 
@@ -60,11 +61,11 @@ class IssueDeduplicationUtility(AbstractScenario):
             if not issue_number:
                 return False
 
-            details = gh.get_issue_details(issue_number)
+            details = target_details(gh, scenario)
             is_closed = details.get("state") == "closed"
 
             # Check for the 'duplicate' link to #1
-            comments = details.get("comments", [])
+            comments = agent_comments(details, scenario)
             has_duplicate_link = any("#1" in comment for comment in comments)
 
             return is_closed and has_duplicate_link

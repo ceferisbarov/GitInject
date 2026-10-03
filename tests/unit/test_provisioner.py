@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.benchmark.utils.provisioner import RepoProvisioner
+from src.benchmark.utils.provisioner import ProvisioningError, RepoProvisioner
 
 
 @pytest.fixture
@@ -19,7 +19,12 @@ def mock_gh_client():
     client.repo_name = "test/repo"
     client.create_repo.return_value = (True, "")
     client.fork_repo.return_value = (True, "")
-    client.delete_repo.return_value = (True, "")
+    client.delete_owned_repo.return_value = (True, "")
+    client.enable_actions.return_value = (True, "")
+    client.enable_issues.return_value = (True, "")
+    client.set_fork_pr_approval_policy.return_value = (True, "")
+    client.set_secret.return_value = (True, "")
+    client.set_variable.return_value = (True, "")
     client.put_file.return_value = (True, "")
     client.batch_sync.return_value = (True, "")
     client.list_files.return_value = []
@@ -133,7 +138,6 @@ def test_provision_create_repo(mock_gh_client, tmp_path):
 
     # Repo doesn't exist
     mock_gh_client.get_repo_info.side_effect = [
-        None,
         {"defaultBranchRef": {"name": "main"}, "isEmpty": False},
         {"defaultBranchRef": {"name": "main"}, "isEmpty": False},
         {"defaultBranchRef": {"name": "main"}, "isEmpty": False},
@@ -183,7 +187,6 @@ def test_provision_fork_repo(mock_gh_client, tmp_path):
 
     # Repo doesn't exist initially
     mock_gh_client.get_repo_info.side_effect = [
-        None,
         {"defaultBranchRef": {"name": "main"}, "isEmpty": False},
         {"defaultBranchRef": {"name": "main"}, "isEmpty": False},
         {"defaultBranchRef": {"name": "main"}, "isEmpty": False},
@@ -198,8 +201,52 @@ def test_provision_fork_repo(mock_gh_client, tmp_path):
         assert call[0][0] != "README.md"
 
 
-def test_teardown(mock_gh_client):
+def test_teardown_owned_only_and_idempotent(mock_gh_client, tmp_path):
     provisioner = RepoProvisioner(mock_gh_client)
     provisioner.teardown()
+    mock_gh_client.delete_owned_repo.assert_not_called()
+    provisioner.provision(str(tmp_path))
+    provisioner.teardown()
+    provisioner.teardown()
+    mock_gh_client.delete_owned_repo.assert_called_once()
 
-    mock_gh_client.delete_repo.assert_called_once()
+
+def test_failed_creation_never_deletes_existing_repository(mock_gh_client, tmp_path):
+    mock_gh_client.create_repo.return_value = (False, "Already exists")
+    provisioner = RepoProvisioner(mock_gh_client)
+    with pytest.raises(ProvisioningError, match="Already exists"):
+        provisioner.provision(str(tmp_path))
+    provisioner.teardown()
+    mock_gh_client.delete_owned_repo.assert_not_called()
+    mock_gh_client.delete_repo.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "put_file",
+        "batch_sync",
+        "enable_actions",
+        "enable_issues",
+        "set_fork_pr_approval_policy",
+        "set_secret",
+        "set_variable",
+    ],
+)
+def test_partial_setup_fails_and_remains_owned(mock_gh_client, tmp_path, operation):
+    getattr(mock_gh_client, operation).return_value = (False, "API unavailable")
+    provisioner = RepoProvisioner(mock_gh_client)
+    with pytest.raises(ProvisioningError, match="API unavailable"):
+        provisioner.provision(str(tmp_path), secrets={"KEY": "value"}, variables={"MODEL": "name"})
+    provisioner.teardown()
+    mock_gh_client.delete_owned_repo.assert_called_once()
+
+
+def test_failed_cleanup_can_be_retried(mock_gh_client, tmp_path):
+    provisioner = RepoProvisioner(mock_gh_client)
+    provisioner.provision(str(tmp_path))
+    mock_gh_client.delete_owned_repo.side_effect = [(False, "retry"), (True, "")]
+    with pytest.raises(ProvisioningError):
+        provisioner.teardown()
+    provisioner.teardown()
+    assert mock_gh_client.delete_owned_repo.call_count == 2
