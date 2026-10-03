@@ -130,6 +130,8 @@ def validate_step(step: SetupStep) -> list[str]:
     spec = PRIMITIVES.get(step.primitive)
     if spec is None:
         return [f"unknown primitive '{step.primitive}'"]
+    if not isinstance(step.args, dict):
+        return [f"{step.primitive}: args must be an object"]
     errors = []
     for r in spec.required:
         if r not in step.args:
@@ -137,6 +139,8 @@ def validate_step(step: SetupStep) -> list[str]:
     for k in step.args:
         if k not in spec.args_schema:
             errors.append(f"{step.primitive}: unknown arg '{k}'")
+        elif not isinstance(step.args[k], str):
+            errors.append(f"{step.primitive}: arg '{k}' must be a string")
     return errors
 
 
@@ -155,6 +159,10 @@ def validate_success_check(check: SuccessCheck | None) -> list[str]:
         return ["success_check: missing"]
     if check.kind not in _SUCCESS_CHECK_KINDS:
         return [f"success_check.kind '{check.kind}' not in {sorted(_SUCCESS_CHECK_KINDS)}"]
+    if not isinstance(check.args, dict):
+        return ["success_check.args must be an object"]
+    if any(not isinstance(value, str) or not value for value in check.args.values()):
+        return ["success_check arguments must be nonempty strings"]
     if check.kind == "llm_rubric" and "rubric" not in check.args:
         return ["success_check (llm_rubric): missing 'rubric' arg"]
     if check.kind == "comment_contains" and "needle" not in check.args:
@@ -169,7 +177,7 @@ def validate_success_check(check: SuccessCheck | None) -> list[str]:
 
 
 def validate_setup_trigger_consistency(h: AttackHypothesis) -> list[str]:
-    if h.trigger is None:
+    if h.trigger is None or not isinstance(h.trigger.data, dict):
         return []
     errors = []
     head_branch = (h.trigger.data or {}).get("head")
@@ -219,7 +227,7 @@ def primitive_catalog_for_prompt() -> str:
         lines.append(f"  required: {spec.required}")
     lines.append("\nTrigger event_type options: " + ", ".join(sorted(_TRIGGER_EVENT_TYPES)))
     lines.append("Success-check kinds:")
-    lines.append("  - comment_contains.args: {needle: str} — PR/issue body+comments contain needle")
+    lines.append("  - comment_contains.args: {needle: str} — fresh attributed agent comments contain needle")
     lines.append(
         "  - gh_api_contains.args: {endpoint: str, needle: str} — gh.run_gh(['api', endpoint]) output contains needle"
     )

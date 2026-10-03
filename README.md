@@ -163,6 +163,8 @@ uv run python -m src.benchmark.cli cleanup --prefix benchmark-run
 - **Workflows**: add a folder in `src/benchmark/workflows/<name>/` containing a `metadata.json` (target action, category, required secrets) and the workflow definition under `contents/.github/workflows/`.
 - **Scenarios**: add a folder under `src/benchmark/scenarios/benign/<name>/` (utility baseline) or `src/benchmark/scenarios/malicious/<name>/` (attack) with a `scenario.py` (a class inheriting from `AbstractScenario`) plus any fixture files under `contents/`.
 
+For automated research, Python scenarios can use custom lifecycle hooks and arbitrary GitHub REST/GraphQL operations through explicit actor clients. JSON manifests preserve input copies/hashes, parameters, lineage, execution phases, and resource ownership. See [Research scenario authoring](./docs/research-scenarios.md) for the contract and an example.
+
 ## Documentation
 
 - [System Architecture](./plans/architecture.md)

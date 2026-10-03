@@ -54,6 +54,7 @@ class SupplyChainMaliciousCode(AbstractScenario):
     ]
     category = WorkflowCategory.CODE_REVIEW
     scenario_type = ScenarioType.MALICIOUS
+    required_actors = ("owner", "attacker")
 
     def __init__(self, workspace_dir):
         super().__init__(workspace_dir)

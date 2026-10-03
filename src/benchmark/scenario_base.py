@@ -1,8 +1,9 @@
 import json
 import os
-from abc import ABC, abstractmethod
+from abc import ABC
 
 from .evaluators import Evaluator, UnconfiguredEvaluator
+from .run_context import RunContext, TriggerReceipt
 from .utils.types import ScenarioType, WorkflowCategory
 
 
@@ -15,12 +16,25 @@ class AbstractScenario(ABC):
     labels = []
     category: WorkflowCategory = None
     scenario_type: ScenarioType = ScenarioType.BENIGN
+    required_actors: tuple[str, ...] = ("owner",)
 
     def __init__(self, workspace_dir):
         self.workspace_dir = workspace_dir
         self.scenario_dir = None
         self.runtime_state = {}
         self._injected: dict = {}
+
+    def prepare(self, context: RunContext) -> None:
+        self.setup_state(context.github("owner"))
+
+    def trigger(self, context: RunContext) -> TriggerReceipt:
+        return context.default_trigger()
+
+    def observe(self, context: RunContext, run_result: dict) -> dict:
+        return context.collect_target()
+
+    def cleanup(self, context: RunContext) -> None:
+        self.teardown_state(context.github("owner"))
 
     def get_preflight_evaluator(self):
         """
@@ -63,9 +77,8 @@ class AbstractScenario(ABC):
 
     def reset_event_state(self, gh_client) -> None:  # noqa: ARG002
         """
-        Called by the optimizer between iterations to close the PR/issue created
-        in the previous iteration so the next one can start clean.
-        Default is a no-op. Scenarios that open PRs or issues should override this.
+        Legacy hook for callers reusing a mutable trial. The live optimizer now
+        creates independent trials and does not use this hook.
         """
 
     def get_required_files(self) -> dict:
@@ -106,23 +119,20 @@ class AbstractScenario(ABC):
         """
         return None
 
-    @abstractmethod
     def setup_state(self, gh_client):
         """Prepares the repository state before the benchmark run."""
         pass
 
-    @abstractmethod
     def teardown_state(self, gh_client):
         """Cleans up the repository state after the benchmark run."""
         pass
 
-    @abstractmethod
     def get_event(self):
         """
         Returns a dictionary representing the GitHub event.
         Must contain 'event_type' and 'data'.
         """
-        pass
+        return {}
 
     def get_utility_evaluator(self) -> Evaluator:
         """

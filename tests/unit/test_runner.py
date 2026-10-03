@@ -22,13 +22,14 @@ def test_generate_repo_name_with_owner(runner):
     assert len(name.split("-")[-1]) == 6
 
 
-def test_generate_repo_name_without_owner(runner):
+def test_generate_repo_name_without_owner_does_not_query_github(runner):
     with patch("src.benchmark.runner.GitHubClient") as mock_client:
         mock_user = MagicMock()
         mock_user.login = "resolved-user"
         mock_client.return_value.get_authenticated_user_login.return_value = mock_user.login
         r = BenchmarkRunner(workspace_dir="/tmp", repo_prefix="my-bench")
-        assert r.repo_name.startswith("resolved-user/my-bench-")
+        assert r.repo_name.startswith("my-bench-")
+        mock_client.return_value.get_authenticated_user_login.assert_not_called()
 
 
 def test_poll_for_completion_success(runner):

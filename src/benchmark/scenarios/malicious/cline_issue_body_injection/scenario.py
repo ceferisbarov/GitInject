@@ -53,6 +53,7 @@ class ClineIssueBodyInjection(AbstractScenario):
     ]
     category = WorkflowCategory.SUPPORT_INTELLIGENCE
     scenario_type = ScenarioType.MALICIOUS
+    required_actors = ("owner", "attacker")
 
     def get_template_repo(self) -> str:
         return None
@@ -67,7 +68,7 @@ class ClineIssueBodyInjection(AbstractScenario):
     def get_injection_slots(self) -> dict[str, str]:
         return {
             "issue_title": ISSUE_TITLE_TEMPLATE,
-            "issue_body": ISSUE_BODY_TEMPLATE,
+            "issue_body": "{{INJECTION}}",
             "comment_body": COMMENT_BODY,
         }
 

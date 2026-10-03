@@ -2,9 +2,12 @@ import logging
 import os
 import subprocess
 import time
+import uuid
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlsplit
 
 import click
+import requests
 from github import Github, GithubException, InputGitTreeElement, Repository
 from tenacity import (
     before_sleep_log,
@@ -49,6 +52,8 @@ class GitHubClient:
         token: Optional[str] = None,
         token_env_var: str = "GITHUB_TOKEN",
         auth_label: str = "GitHub",
+        record_event=None,
+        actor: str = "owner",
     ):
         self.repo_name = repo
         self.token_env_var = token_env_var
@@ -58,6 +63,52 @@ class GitHubClient:
         self._repo_cache: Optional[Repository.Repository] = None
         self._owned_repo = None
         self._authenticated_login = None
+        self.record_event = record_event
+        self.actor = actor
+
+    def _record(self, kind, **data):
+        if self.record_event is not None:
+            self.record_event(kind, actor=self.actor, **data)
+
+    def request(self, method: str, endpoint: str, **kwargs) -> requests.Response:
+        """Call any GitHub REST endpoint, preserving the response and HTTP errors."""
+        base = self.gh.base_url.rstrip("/")
+        url = endpoint if endpoint.startswith("https://") else base + "/" + endpoint.lstrip("/")
+        parsed, origin = urlsplit(url), urlsplit(base)
+        if parsed.scheme != "https" or parsed.netloc != origin.netloc or parsed.username or parsed.password:
+            raise ValueError("Endpoint must belong to the authenticated GitHub API host")
+        headers = requests.structures.CaseInsensitiveDict(kwargs.pop("headers", {}))
+        if "Authorization" in headers or "auth" in kwargs:
+            raise ValueError("Select a GitHub actor instead of overriding its credentials")
+        headers["Authorization"] = f"Bearer {self.token}"
+        headers.setdefault("Accept", "application/vnd.github+json")
+        kwargs.setdefault("timeout", 60)
+        kwargs.setdefault("allow_redirects", False)
+        request_id = uuid.uuid4().hex
+        self._record("api_request", request_id=request_id, method=method.upper(), path=parsed.path)
+        try:
+            response = requests.request(method, url, headers=headers, **kwargs)
+        except requests.RequestException:
+            self._record("api_response", request_id=request_id, status=None)
+            raise
+        self._record(
+            "api_response",
+            request_id=request_id,
+            status=response.status_code,
+            github_request_id=response.headers.get("X-GitHub-Request-Id"),
+        )
+        response.raise_for_status()
+        return response
+
+    def graphql(self, query: str, variables: dict | None = None) -> dict:
+        result = self.request("POST", "/graphql", json={"query": query, "variables": variables or {}}).json()
+        if result.get("errors"):
+            raise RuntimeError(f"GitHub GraphQL errors: {result['errors']}")
+        return result["data"]
+
+    def _claim_repository(self, repo):
+        self._owned_repo = (repo.full_name, repo.id)
+        self._record("resource", name=repo.full_name, id=repo.id, state="created")
 
     def _get_token(self) -> str:
         """Retrieves GitHub token from environment or gh CLI."""
@@ -140,7 +191,7 @@ class GitHubClient:
 
             self.repo_name = repo.full_name
             self._repo_cache = repo
-            self._owned_repo = (repo.full_name, repo.id)
+            self._claim_repository(repo)
             return True, ""
         except GithubException as e:
             return False, str(e)
@@ -172,7 +223,7 @@ class GitHubClient:
                 return False, f"GitHub returned an unexpected fork: {new_repo.full_name}"
             self.repo_name = new_repo.full_name
             self._repo_cache = new_repo
-            self._owned_repo = (new_repo.full_name, new_repo.id)
+            self._claim_repository(new_repo)
             return True, ""
         except Exception as exc:
             return False, str(exc)
@@ -200,6 +251,7 @@ class GitHubClient:
         except GithubException as exc:
             if exc.status != 404:
                 return False, str(exc)
+        self._record("resource", name=name, id=repo_id, state="deleted")
         self._owned_repo = None
         self._repo_cache = None
         return True, ""
