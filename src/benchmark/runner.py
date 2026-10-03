@@ -66,8 +66,6 @@ class BenchmarkRunner:
         if self.event_gh_client is not self.gh_client:
             self.event_gh_client.repo_name = repo_name
             self.event_gh_client._repo_cache = None
-        if hasattr(self, "analyzer"):
-            self.analyzer.gh_client.repo_name = repo_name
 
     def _generate_repo_name(self, prefix):
         """Generates a unique repo name based on a prefix."""
@@ -123,17 +121,16 @@ class BenchmarkRunner:
             unaligned=unaligned,
         )
         record = RunRecord(self.workspace_dir, spec)
-        runs_dir = str(record.directory)
-        timestamp = record.timestamp
+        run_result = {}
         result = {
             "workflow": workflow_id,
             "scenario": str(scenario_id),
             "repo": self.repo_name,
-            "timestamp": timestamp,
+            "timestamp": record.timestamp,
             "attempt_id": record.attempt_id,
-            "runs_dir": runs_dir,
+            "runs_dir": str(record.directory),
+            "run_result": run_result,
         }
-        run_result = {}
         setup_started = False
         scenario = context = None
         previous_recorders = []
@@ -155,10 +152,7 @@ class BenchmarkRunner:
                 definition = Path(scenario_path)
                 if Path(source).is_file() and (definition.parent / "contents").is_dir():
                     record.snapshot("scenario", definition.parent / "contents", prefix="contents")
-                if definition.is_dir():
-                    scenario_path = str(record.directory / "inputs/scenario")
-                else:
-                    scenario_path = str(record.directory / "inputs/scenario" / definition.name)
+                scenario_path = str(record.directory / "inputs/scenario" / definition.name)
             lockfile = os.path.join(self.workspace_dir, "uv.lock")
             if os.path.isfile(lockfile):
                 record.snapshot("dependencies", lockfile)
@@ -198,16 +192,14 @@ class BenchmarkRunner:
             if not unaligned:
                 provider_error = self._validate_provider_requirements(workflow_meta)
                 if provider_error:
-                    result["error"] = provider_error
-                    return result
+                    raise ValueError(provider_error)
 
             # Tier 1: workflow-declared required keys (hard block)
             required_secrets = workflow_meta.get("required_secrets", [])
             required_vars = workflow_meta.get("required_vars", [])
             missing = [k for k in required_secrets + required_vars if not os.environ.get(k)]
             if missing and not unaligned:
-                result["error"] = "Missing required environment variables:\n  - " + "\n  - ".join(missing)
-                return result
+                raise ValueError("Missing required environment variables:\n  - " + "\n  - ".join(missing))
 
             # Tier 2: YAML-scanned keys — set if available, silently skip if not
             requirements = self._get_workflow_requirements(workflow_dir)
@@ -215,10 +207,11 @@ class BenchmarkRunner:
             variables = {k: v for k in requirements["vars"] if (v := os.environ.get(k))}
 
             secrets.update(scenario.get_secrets())
-            missing = [name for name in scenario.get_required_secrets() if not os.environ.get(name)]
+            scenario_secrets = scenario.get_required_secrets()
+            missing = [name for name in scenario_secrets if not os.environ.get(name)]
             if missing:
                 raise ValueError("Missing scenario secrets: " + ", ".join(missing))
-            secrets.update({name: os.environ[name] for name in scenario.get_required_secrets()})
+            secrets.update({name: os.environ[name] for name in scenario_secrets})
 
             if attack_id or attack is not None:
                 attack = attack if attack is not None else load_attack(attack_id, payload=attack_payload)
@@ -276,18 +269,14 @@ class BenchmarkRunner:
             scenario.prepare(context)
 
             click.echo("Capturing context snapshot...")
-            snapshot = self._capture_context_snapshot(scenario, workflow_dir)
-            with open(os.path.join(runs_dir, "context_snapshot.json"), "w") as f:
-                json.dump(snapshot, f, indent=4)
-
-            llm_input = self._reconstruct_llm_input(scenario, workflow_dir)
+            write_json(record.directory / "context_snapshot.json", self._capture_context_snapshot(scenario, workflow_dir))
 
             if log_llm_input:
+                llm_input = self._reconstruct_llm_input(scenario, workflow_dir)
                 click.echo(click.style("\n--- Reconstructed LLM Input ---", bold=True))
                 click.echo(llm_input)
                 click.echo(click.style("--- End LLM Input ---\n", bold=True))
-                with open(os.path.join(runs_dir, "llm_input.txt"), "w") as f:
-                    f.write(llm_input)
+                (record.directory / "llm_input.txt").write_text(llm_input)
 
             click.echo(f"Triggering workflow '{workflow_id}' on GitHub...")
             self._prepare_trial(scenario, workflow_meta)
@@ -314,8 +303,7 @@ class BenchmarkRunner:
             wait_result = self._wait_for_run(start_time, expected_event=receipt.event_type)
 
             if not wait_result:
-                result["error"] = "Timed out waiting for workflow run or could not find it."
-                return result
+                raise TimeoutError("Timed out waiting for workflow run or could not find it.")
 
             run_id, final_run = wait_result
 
@@ -333,14 +321,16 @@ class BenchmarkRunner:
                 billable_minutes = None
                 result["timing_error"] = str(exc)
 
-            run_result = {
-                "stdout": stdout,
-                "stderr": stderr,
-                "exit_code": 0 if final_run.conclusion == "success" else 1,
-                "agent_invoked": self._agent_invocation(final_run),
-                "status": final_run.status if final_run else None,
-                "conclusion": final_run.conclusion if final_run else None,
-            }
+            run_result.update(
+                {
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "exit_code": 0 if final_run.conclusion == "success" else 1,
+                    "agent_invoked": self._agent_invocation(final_run),
+                    "status": final_run.status,
+                    "conclusion": final_run.conclusion,
+                }
+            )
 
             run_result["jobs"] = self._job_evidence
             if log_error:
@@ -368,14 +358,8 @@ class BenchmarkRunner:
 
             result.update(
                 {
-                    "workflow": workflow_id,
-                    "scenario": str(scenario_id),
                     "analysis": analysis,
-                    "run_id": run_id,
-                    "repo": self.repo_name,
-                    "timestamp": timestamp,
                     "message": f"Analyzed workflow run {run_id} ({final_run.conclusion}).",
-                    "run_result": run_result,
                     "gh_state": gh_state,
                     "billable_minutes": billable_minutes,
                     "evidence_boundary": {
@@ -389,11 +373,9 @@ class BenchmarkRunner:
         except (KeyboardInterrupt, SystemExit) as exc:
             result["error"] = type(exc).__name__
             result["interrupted"] = True
-            result["run_result"] = run_result
             raise
         except Exception as exc:
             result["error"] = str(exc)
-            result["run_result"] = run_result
             return result
         finally:
             try:
@@ -402,17 +384,17 @@ class BenchmarkRunner:
                     self._cleanup(scenario if setup_started else None, result, context=context)
                 else:
                     click.echo(click.style(f"SKIP CLEANUP: Repository {self.repo_name} remains active.", fg="yellow"))
-                self._save_run_locally(result, run_result, runs_dir)
+                self._save_run_locally(result, run_result, record.directory)
                 phase = "interrupted" if result.get("interrupted") else "failed" if result.get("error") else "completed"
                 record.event("phase", phase=phase)
             finally:
                 for client, recorder, actor in previous_recorders:
                     client.record_event, client.actor = recorder, actor
 
-    def _cleanup(self, scenario, result, context=None):
+    def _cleanup(self, scenario, result, context):
         operations = [self.provisioner.teardown]
         if scenario is not None:
-            operations.insert(0, lambda: scenario.cleanup(context) if context else scenario.teardown_state(self.gh_client))
+            operations.insert(0, lambda: scenario.cleanup(context))
         for operation in operations:
             try:
                 operation()

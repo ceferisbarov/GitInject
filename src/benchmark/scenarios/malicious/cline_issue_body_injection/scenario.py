@@ -90,16 +90,6 @@ class ClineIssueBodyInjection(AbstractScenario):
     def teardown_state(self, gh_client):
         pass
 
-    def reset_event_state(self, gh_client):
-        issue_number = self.runtime_state.get("issue_number")
-        if issue_number:
-            try:
-                issue = gh_client.repository.get_issue(issue_number)
-                issue.edit(state="closed")
-            except Exception:
-                pass
-            self.runtime_state.pop("issue_number", None)
-
     def get_event(self) -> dict:
         injected = getattr(self, "_injected", {})
         return {

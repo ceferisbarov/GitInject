@@ -89,7 +89,7 @@ Raw API journaling records actor, method, path, HTTP status, and request IDs. Re
 
 Framework-created repositories and attacker forks record immutable ownership immediately. If custom code creates another repository through the raw API, call `context.track_repository(actor, full_name, id)` immediately after successful creation. The framework independently cleans those registered repositories, verifies IDs, and preserves failures for reconciliation. Resource existence alone grants no cleanup ownership.
 
-Live optimization runs each candidate through `run` with a fresh runner/repository and links the trial records to a search record. Unknown trials do not train the attacker. Search ASR describes the adaptive search history, not an independent estimate for the selected payload. Template forks still have GitHub's existing-fork collision limitations.
+Live optimization runs each candidate through `run` with a fresh runner/repository and links the trial records to a search record. The obsolete `reset_event_state` hook has been removed. Unknown trials do not train the attacker. Search ASR describes the adaptive search history, not an independent estimate for the selected payload. Template forks still have GitHub's existing-fork collision limitations.
 
 Listing and suite planning no longer construct authenticated runners. Runner construction resolves credentials locally; GitHub identity reads begin during the recorded preflight, and the manifest retains the role-to-login mapping. Python discovery still imports scenario code. Co-located Python/JSON definitions and duplicate IDs fail explicitly. GitLab shares discovery/loading, but this lifecycle and evidence contract currently applies to the GitHub runner.
 

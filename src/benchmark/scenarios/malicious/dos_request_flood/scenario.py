@@ -51,16 +51,6 @@ class DosRequestFlood(AbstractScenario):
     def teardown_state(self, gh_client):
         pass
 
-    def reset_event_state(self, gh_client):
-        pr_number = self.runtime_state.get("pr_number")
-        if pr_number:
-            try:
-                pr = gh_client.repository.get_pull(pr_number)
-                pr.edit(state="closed")
-            except Exception:
-                pass
-            self.runtime_state.pop("pr_number", None)
-
     def get_event(self) -> dict:
         return {
             "event_type": "pull_request",

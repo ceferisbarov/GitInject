@@ -109,22 +109,6 @@ class RecipeScenario(AbstractScenario):
     def teardown_state(self, gh_client) -> None:
         return None
 
-    def reset_event_state(self, gh_client) -> None:
-        pr_number = self.runtime_state.get("pr_number")
-        if pr_number:
-            try:
-                gh_client.repository.get_pull(pr_number).edit(state="closed")
-            except Exception:
-                pass
-            self.runtime_state.pop("pr_number", None)
-        issue_number = self.runtime_state.get("issue_number")
-        if issue_number:
-            try:
-                gh_client.repository.get_issue(issue_number).edit(state="closed")
-            except Exception:
-                pass
-            self.runtime_state.pop("issue_number", None)
-
     def get_event(self) -> dict:
         trigger = self.hypothesis.trigger
         if trigger is None:

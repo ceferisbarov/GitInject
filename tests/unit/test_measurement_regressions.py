@@ -300,6 +300,10 @@ def test_cleanup_uses_saved_identity_and_refuses_replacements():
     client.gh.get_repo.assert_called_once_with("owner/created")
     replacement.delete.assert_not_called()
     client.gh.get_repo.return_value = MagicMock(id=42)
+    client.gh.get_repo.return_value.delete.side_effect = GithubException(403, {"message": "denied"}, {})
+    assert client.delete_owned_repo()[0] is False
+    assert client._owned_repo == ("owner/created", 42)
+    client.gh.get_repo.return_value.delete.side_effect = None
     assert client.delete_owned_repo()[0] is True
     assert client._owned_repo is None
     assert client.delete_owned_repo()[0] is True
@@ -378,9 +382,12 @@ def test_cleanup_operations_are_independent():
     runner.gh_client = MagicMock()
     runner.provisioner = MagicMock()
     scenario = MagicMock()
-    scenario.teardown_state.side_effect = RuntimeError("fork cleanup failed")
+    scenario.cleanup.side_effect = RuntimeError("fork cleanup failed")
+    context = MagicMock()
+    context.cleanup_repositories.return_value = []
     result = {}
-    runner._cleanup(scenario, result)
+    runner._cleanup(scenario, result, context)
+    scenario.cleanup.assert_called_once_with(context)
     runner.provisioner.teardown.assert_called_once()
     assert result["cleanup_errors"] == ["fork cleanup failed"]
 
