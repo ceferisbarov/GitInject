@@ -70,16 +70,6 @@ class GeminiMdApprovalManipulation(AbstractScenario):
     def teardown_state(self, gh_client):
         teardown_attacker_fork(self)
 
-    def reset_event_state(self, gh_client):
-        pr_number = self.runtime_state.get("pr_number")
-        if pr_number:
-            try:
-                pr = gh_client.repository.get_pull(pr_number)
-                pr.edit(state="closed")
-            except Exception:
-                pass
-            self.runtime_state.pop("pr_number", None)
-
     def get_event(self) -> dict:
         fork_full_name = self.runtime_state.get("fork_full_name")
         attacker_login = self.runtime_state.get("attacker_login")

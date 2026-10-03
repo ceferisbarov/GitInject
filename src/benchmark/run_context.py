@@ -4,8 +4,6 @@ import random
 from dataclasses import dataclass, field
 from typing import Callable, Literal
 
-from github import GithubException
-
 from .run_record import RunRecord, RunSpec
 from .utils.gh_client import GitHubClient
 
@@ -66,14 +64,7 @@ class RunContext:
         errors = []
         for actor, name, repository_id in self._repositories[:]:
             try:
-                try:
-                    repo = self.github(actor).gh.get_repo(name)
-                    if repo.id != repository_id:
-                        raise RuntimeError(f"Refusing cleanup: repository ID changed for {name}")
-                    repo.delete()
-                except GithubException as exc:
-                    if exc.status != 404:
-                        raise
+                self.github(actor)._delete_repository(name, repository_id)
                 self.record.event("resource", actor=actor, name=name, id=repository_id, state="deleted")
                 self._repositories.remove((actor, name, repository_id))
             except Exception as exc:

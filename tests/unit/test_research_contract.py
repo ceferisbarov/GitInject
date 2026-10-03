@@ -364,8 +364,12 @@ def test_extra_repository_cleanup_checks_immutable_identity_and_remains_retryabl
     assert "ID changed" in context.cleanup_repositories()[0]
     repo.delete.assert_not_called()
     repo.id = 123
+    repo.delete.side_effect = GithubException(403, {"message": "denied"}, {})
+    assert "denied" in context.cleanup_repositories()[0]
+    assert context._repositories == [("owner", "owner/extra", 123)]
+    repo.delete.side_effect = None
     assert context.cleanup_repositories() == []
-    repo.delete.assert_called_once()
+    assert repo.delete.call_count == 2
     context.track_repository("owner", "owner/missing", 789)
     client.gh.get_repo.side_effect = GithubException(404, {}, {})
     assert context.cleanup_repositories() == []

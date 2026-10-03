@@ -238,19 +238,26 @@ class GitHubClient:
         repo.get_branch(repo.default_branch)
         self._repo_cache = repo
 
+    def _delete_repository(self, name: str, repository_id: int) -> None:
+        """Delete a recorded repository identity; an absent repository is already clean."""
+        try:
+            repo = self.gh.get_repo(name)
+            if repo.id != repository_id:
+                raise RuntimeError(f"Refusing cleanup: repository ID changed for {name}")
+            repo.delete()
+        except GithubException as exc:
+            if exc.status != 404:
+                raise
+
     def delete_owned_repo(self) -> Tuple[bool, str]:
         """Delete only the exact repository created through this client."""
         if self._owned_repo is None:
             return True, ""
         name, repo_id = self._owned_repo
         try:
-            repo = self.gh.get_repo(name)
-            if repo.id != repo_id:
-                return False, f"Refusing cleanup: repository ID changed for {name}"
-            repo.delete()
-        except GithubException as exc:
-            if exc.status != 404:
-                return False, str(exc)
+            self._delete_repository(name, repo_id)
+        except (GithubException, RuntimeError) as exc:
+            return False, str(exc)
         self._record("resource", name=name, id=repo_id, state="deleted")
         self._owned_repo = None
         self._repo_cache = None

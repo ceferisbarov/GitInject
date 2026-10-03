@@ -75,12 +75,6 @@ class AbstractScenario(ABC):
         """Store a rendered injection value. get_event() checks _injected for overrides."""
         self._injected[field] = rendered
 
-    def reset_event_state(self, gh_client) -> None:  # noqa: ARG002
-        """
-        Legacy hook for callers reusing a mutable trial. The live optimizer now
-        creates independent trials and does not use this hook.
-        """
-
     def get_required_files(self) -> dict:
         """
         Returns a dictionary of {repo_path: local_path_or_content}
