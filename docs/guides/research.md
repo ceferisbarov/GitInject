@@ -84,6 +84,12 @@ The framework cleans registered repositories independently of scenario cleanup, 
 
 ## Drive an experiment from Python
 
+Install GitInject into your controller's Python project so its imports are available:
+
+```bash
+uv add gitinject
+```
+
 ```python
 from pathlib import Path
 from gitinject.runner import BenchmarkRunner

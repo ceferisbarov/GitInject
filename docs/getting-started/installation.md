@@ -2,9 +2,23 @@
 
 The project requires Python **3.13 or newer**, [uv](https://docs.astral.sh/uv/), and the [GitHub CLI](https://cli.github.com/). The CLI is used for operations such as installing Actions secrets and fetching logs, even when API authentication uses an environment variable.
 
-## Install into a project
+## Install the CLI
 
-For a released version from PyPI, add GitInject to your project's dependencies:
+Install the released package from [PyPI](https://pypi.org/project/gitinject/) into an isolated tool environment:
+
+```bash
+uv tool install gitinject
+gitinject --help
+gitinject list workflows
+```
+
+Workflows, scenarios, fixtures, and scanner research notes are bundled. No source checkout or project setup is needed. The examples in the quickstart and guides use `gitinject` directly.
+
+If the command is not found, run `uv tool update-shell` and restart your shell. To upgrade an installed CLI, run `uv tool upgrade gitinject`. If your default Python is older than 3.13, install with `uv tool install --python 3.13 gitinject`.
+
+## Install the Python API into a project
+
+For scripts, notebooks, or research controllers that import GitInject, add it to your project's dependencies:
 
 ```bash
 uv add gitinject
@@ -14,21 +28,16 @@ uv run gitinject list workflows
 
 The distribution and Python import package are both named `gitinject`. Extensions can import `gitinject.runner`, `gitinject.scenario_base`, and the other modules documented in the [Python API](../api/index.md). You can also invoke the CLI with `uv run python -m gitinject`.
 
-## Install a standalone CLI
+`uv add` installs GitInject into your project environment; a tool installation does not make its Python modules available to your project's scripts. Use `uv run gitinject` for the project-installed CLI. A virtual-environment installation with `python -m pip install gitinject` works as well.
 
-```bash
-uv tool install gitinject
-gitinject --help
-```
-
-`uv tool install` creates an isolated tool environment; `uv add` installs GitInject into your project environment. Both include the workflows, scenarios, fixtures, and scanner research notes. A virtual-environment installation with `python -m pip install gitinject` works as well.
+## Install from Git
 
 To install directly from Git:
 
 ```bash
-uv add gitinject --git https://github.com/ceferisbarov/GitInject.git
-# Or install the standalone CLI:
 uv tool install git+https://github.com/ceferisbarov/GitInject.git
+# Or add it to a Python project:
+uv add gitinject --git https://github.com/ceferisbarov/GitInject.git
 ```
 
 ## Develop or reproduce from a checkout
@@ -42,7 +51,7 @@ uv sync --locked
 uv run gitinject --help
 ```
 
-Run checkout commands from the repository root. The old `src.benchmark` import path has been replaced by `gitinject`.
+Run checkout commands from the repository root, using `uv run gitinject` in place of `gitinject` to use the checkout's code and locked dependencies.
 
 ## Experiment workspace
 

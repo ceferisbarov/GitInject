@@ -24,7 +24,7 @@ def get_event(self):
 Use `self.branch` and fixtures or `setup_state(gl_client)` to create the source branch and changes. Evaluators receive `GitLabClient`, so use its MR/project interfaces rather than GitHub helpers. The shipped scenario catalog currently contains GitHub scenarios; author a compatible GitLab scenario before attempting an MR run.
 
 ```bash
-uv run gitinject run \
+gitinject run \
   --workflow claude-gitlab-mr-review \
   --scenario /absolute/path/to/gitlab-scenario
 ```

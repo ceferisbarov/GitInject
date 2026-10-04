@@ -4,6 +4,7 @@
 
 [![NeurIPS 2026 accepted](https://img.shields.io/badge/NeurIPS_2026-Accepted-6842C2)](https://neurips.cc/Conferences/2026/CallForEvaluationsDatasets)
 [![arXiv](https://img.shields.io/badge/arXiv-2606.09935-B31B1B?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2606.09935)
+[![PyPI](https://img.shields.io/pypi/v/gitinject)](https://pypi.org/project/gitinject/)
 [![Python 3.13+](https://img.shields.io/badge/Python-3.13%2B-3776AB?logo=python&logoColor=white)](https://github.com/ceferisbarov/GitInject/blob/master/pyproject.toml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-22863A)](https://github.com/ceferisbarov/GitInject/blob/master/LICENSE)
 
@@ -26,35 +27,26 @@ A [GitLab runner](https://ceferisbarov.github.io/GitInject/guides/gitlab/) is al
 
 ## Get started
 
-Install Python 3.13+, [uv](https://docs.astral.sh/uv/), and the [GitHub CLI](https://cli.github.com/). Install a released version from PyPI into an existing project:
+Install Python 3.13+, [uv](https://docs.astral.sh/uv/), and the [GitHub CLI](https://cli.github.com/). Install GitInject from [PyPI](https://pypi.org/project/gitinject/) as a standalone CLI:
 
 ```bash
-uv add gitinject
-uv run gitinject list workflows
-uv run gitinject list scenarios
-uv run gitinject run-suite --workflow-labels codex --scenario-type benign --dry-run
+uv tool install gitinject
+gitinject list workflows
+gitinject list scenarios
+gitinject run-suite --workflow-labels codex --scenario-type benign --dry-run
 ```
 
-For a standalone CLI, use `uv tool install gitinject`, then run `gitinject` directly. Python extensions import from `gitinject`, for example `from gitinject.runner import BenchmarkRunner`.
-
-To install from Git, use `uv add gitinject --git https://github.com/ceferisbarov/GitInject.git`. To develop GitInject or reproduce the paper with the checked-in dependency lockfile, use a checkout:
-
-```bash
-git clone https://github.com/ceferisbarov/GitInject.git
-cd GitInject
-uv sync --locked
-uv run gitinject list workflows
-uv run gitinject list scenarios
-uv run gitinject run-suite --workflow-labels codex --scenario-type benign --dry-run
-```
+The workflows, scenarios, and fixtures are bundled, so no checkout is needed. Run commands from your experiment directory; evidence is saved to `runs/` and reports to `reports/`. If `gitinject` is not found after installation, run `uv tool update-shell` and restart your shell.
 
 The dry run lists compatible pairs without creating repositories or calling models. Configure your GitHub identity and workflow/judge credentials using the [installation guide](https://ceferisbarov.github.io/GitInject/getting-started/installation/), then run a first benign trial:
 
 ```bash
-uv run gitinject run --workflow codex-pr-review --scenario vulnerable_code_review
+gitinject run --workflow codex-pr-review --scenario vulnerable_code_review
 ```
 
 This pair needs `OPENAI_API_KEY` for Codex and `GEMINI_API_KEY` for semantic evaluation, plus local GitHub authentication. See the [quickstart](https://ceferisbarov.github.io/GitInject/getting-started/quickstart/) for interpreting results.
+
+For the Python API, use `uv add gitinject` in your project and import from `gitinject`, for example `from gitinject.runner import BenchmarkRunner`. For development or paper reproduction with the checked-in dependency lockfile, see [checkout installation](https://ceferisbarov.github.io/GitInject/getting-started/installation/#develop-or-reproduce-from-a-checkout).
 
 ## Guides and reference
 

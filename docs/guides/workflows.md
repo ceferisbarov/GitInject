@@ -1,6 +1,6 @@
 # Add a workflow
 
-Create a directory under `src/gitinject/workflows/<id>/`:
+Create `workflows/<id>/` in your experiment directory, or `src/gitinject/workflows/<id>/` when contributing to a source checkout:
 
 ```text
 my-reviewer/
@@ -12,6 +12,8 @@ my-reviewer/
 ```
 
 Other repository assets may also live under `contents/`. The provisioner installs them on the default branch and removes existing workflow definitions from a template fork before syncing the selected workflow.
+
+A workspace `workflows/` directory replaces the bundled workflow catalog. Include each workflow you want to use in that directory; see [experiment workspaces](../getting-started/installation.md#experiment-workspace).
 
 ## Define metadata
 
@@ -44,8 +46,8 @@ Specify `agent_logins` for output accounts beyond the defaults. The field replac
 ## Verify discovery and pairing
 
 ```bash
-uv run gitinject list workflows
-uv run gitinject run-suite \
+gitinject list workflows
+gitinject run-suite \
   --workflow-labels experimental --dry-run
 ```
 

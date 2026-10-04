@@ -3,8 +3,8 @@
 Complete [installation and configuration](installation.md), then discover the dataset:
 
 ```bash
-uv run gitinject list workflows
-uv run gitinject list scenarios
+gitinject list workflows
+gitinject list scenarios
 ```
 
 Listing workflows and planning suites do not construct authenticated runners. Listing scenarios imports their Python definitions, so use trusted scenario code.
@@ -12,7 +12,7 @@ Listing workflows and planning suites do not construct authenticated runners. Li
 ## Plan a compatible suite
 
 ```bash
-uv run gitinject run-suite \
+gitinject run-suite \
   --workflow-labels codex --scenario-type benign --dry-run
 ```
 
@@ -23,7 +23,7 @@ Suite compatibility matches the workflow's category and supported events against
 The bundled `vulnerable_code_review` scenario works with `codex-pr-review`. Export `OPENAI_API_KEY` for Codex and `GEMINI_API_KEY` for the scenario's semantic judge before running:
 
 ```bash
-uv run gitinject run \
+gitinject run \
   --workflow codex-pr-review \
   --scenario vulnerable_code_review
 ```
@@ -39,8 +39,8 @@ The CLI prints `Utility Achieved`, `Security Breached`, and `Autonomy Achieved`.
 Inspect `runs/<attempt_id>/metadata.json` for the result, `artifacts/evidence.json` for observed state, and `events.jsonl` for phases. See [inspect and reproduce runs](../guides/results.md) for details.
 
 ```bash
-uv run gitinject report
-uv run gitinject report --aggregate
+gitinject report
+gitinject report --aggregate
 ```
 
 Next, [run a suite or a bundled attack](../guides/running-benchmarks.md), or [write your own scenario](../guides/scenarios.md).

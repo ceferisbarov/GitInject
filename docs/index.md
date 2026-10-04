@@ -6,6 +6,21 @@ GitInject provisions repositories, installs an agent workflow, creates a scenari
 
 Use it to compare workflow configurations, reproduce the bundled attacks, build custom experiments, or generate hypotheses with the vulnerability scanner.
 
+## Install and explore
+
+With Python **3.13+**, [uv](https://docs.astral.sh/uv/), and the [GitHub CLI](https://cli.github.com/) installed:
+
+```bash
+uv tool install gitinject
+gitinject list workflows
+gitinject list scenarios
+gitinject run-suite --workflow-labels codex --scenario-type benign --dry-run
+```
+
+GitInject is available on [PyPI](https://pypi.org/project/gitinject/) with workflows, scenarios, and fixtures bundled. Run commands from your experiment directory; evidence is saved to `runs/` and reports to `reports/`. The dry run lists compatible pairs without creating repositories or calling models.
+
+Follow [installation and configuration](getting-started/installation.md) to set up credentials, then [run your first benchmark](getting-started/quickstart.md). For the Python API, install into your project with `uv add gitinject`.
+
 ## Start here
 
 | Goal | Read |
