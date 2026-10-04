@@ -16,14 +16,13 @@ The runner reads `src/benchmark/workflows/<id>/metadata.json` as a JSON object. 
 | `required_vars` | string array, `[]` | Required nonempty environment names for repository variables. |
 | `agent_steps` | string array, `[]` | Exact job step names used to verify invocation. |
 | `agent_logins` | string array | Allowed output accounts; replaces defaults when supplied. |
-| `adversarial_swaps` | object, `{}` | Action substitution overrides for unaligned runs. |
 | `source` | string | Provenance URL for the workflow definition. |
 
 Category, provider, and defense-level enums are listed in the [types API](../api/types.md). Metadata does not rewrite a workflow's actual trigger, permissions, or prompt. Keep `supported_events` consistent with YAML.
 
 ## Configuration precedence
 
-The GitHub runner validates provider credentials and metadata's required names unless unaligned mode is enabled. It then collects available environment values referenced by YAML `secrets.*` and `vars.*`. Scenario-defined secrets override collected secrets; scenario-required environment secrets are applied afterward.
+The GitHub runner validates provider credentials and metadata's required names. It then collects available environment values referenced by YAML `secrets.*` and `vars.*`. Scenario-defined secrets override collected secrets; scenario-required environment secrets are applied afterward.
 
 Repository variable values are saved in the manifest's effective configuration. Secret configuration saves names. Snapshotted YAML, scenario code, fixtures, custom artifacts, and logs are retained verbatim, so do not embed private credential values in those inputs.
 

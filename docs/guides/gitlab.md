@@ -35,4 +35,4 @@ GitLab shares scenario discovery/loading, but it calls `setup_state`, `get_event
 
 Its `autonomy_achieved` is based on pipeline success, not verified agent steps. It evaluates utility/security directly rather than using the GitHub analyzer's independent unknown-verdict handling. Results are saved in timestamp directories after successful evaluation; failures are not guaranteed to have the same durable record as GitHub attempts.
 
-The CLI's GitLab path forwards `cleanup`, but not attack generation, unaligned substitutions, context parameters, seed, or prompt logging. Use `run` for GitLab; `run-suite` and live scanner validation currently execute via the GitHub runner. See the [GitLab API](../api/gitlab.md) for available operations.
+The CLI's GitLab path forwards `cleanup`, but not attack generation, context parameters, seed, or prompt logging. Use `run` for GitLab; `run-suite` and live scanner validation currently execute via the GitHub runner. See the [GitLab API](../api/gitlab.md) for available operations.

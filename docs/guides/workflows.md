@@ -51,4 +51,4 @@ uv run python -m src.benchmark.cli run-suite \
 
 Then execute one suitable scenario after configuring credentials. Inspect job evidence to verify the agent step was detected and inspect attributed comments to confirm output accounts.
 
-`adversarial_swaps` can override the global action substitution registry for `--unaligned` experiments. The effective map is retained in the manifest. The provisioner also accepts legacy root-level YAML when `contents/` is absent, but new workflows should use the directory layout above.
+The provisioner also accepts legacy root-level YAML when `contents/` is absent, but new workflows should use the directory layout above.

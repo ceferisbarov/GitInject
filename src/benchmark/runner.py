@@ -101,7 +101,6 @@ class BenchmarkRunner:
         attack_id=None,
         attack_payload=None,
         cleanup=True,
-        unaligned=False,
         log_llm_input=False,
         parameters=None,
         seed=None,
@@ -118,7 +117,6 @@ class BenchmarkRunner:
             parent_attempt_id=parent_attempt_id,
             attack=attack_id or getattr(attack, "name", None),
             cleanup=cleanup,
-            unaligned=unaligned,
         )
         record = RunRecord(self.workspace_dir, spec)
         run_result = {}
@@ -189,16 +187,15 @@ class BenchmarkRunner:
                 result["repo"] = scenario.runtime_state["repo"] = self.repo_name
             record.save_manifest()
             self._configure_workflow_tracking(workflow_dir, workflow_meta)
-            if not unaligned:
-                provider_error = self._validate_provider_requirements(workflow_meta)
-                if provider_error:
-                    raise ValueError(provider_error)
+            provider_error = self._validate_provider_requirements(workflow_meta)
+            if provider_error:
+                raise ValueError(provider_error)
 
             # Tier 1: workflow-declared required keys (hard block)
             required_secrets = workflow_meta.get("required_secrets", [])
             required_vars = workflow_meta.get("required_vars", [])
             missing = [k for k in required_secrets + required_vars if not os.environ.get(k)]
-            if missing and not unaligned:
+            if missing:
                 raise ValueError("Missing required environment variables:\n  - " + "\n  - ".join(missing))
 
             # Tier 2: YAML-scanned keys — set if available, silently skip if not
@@ -221,26 +218,9 @@ class BenchmarkRunner:
             target_branch = getattr(scenario, "branch", None)
             template_repo = scenario.get_template_repo()
 
-            substitution_map = {}
-            if unaligned:
-                global_swaps_path = os.path.join(self.workspace_dir, "src/benchmark/config/adversarial_swaps.json")
-                if os.path.exists(global_swaps_path):
-                    with open(global_swaps_path, "r") as f:
-                        substitution_map.update(json.load(f))
-
-                swaps = workflow_meta.get("adversarial_swaps", {})
-                substitution_map.update(swaps)
-
-                tag = unaligned if isinstance(unaligned, str) else "mistral"
-                for original in list(substitution_map.keys()):
-                    replacement = substitution_map[original]
-                    if "@" not in replacement:
-                        substitution_map[original] = f"{replacement}@{tag}"
-
             record.manifest["configuration"] = {
                 "secret_names": sorted(secrets),
                 "variables": variables,
-                "substitutions": substitution_map,
                 "required_actors": list(scenario.required_actors),
                 "template_repo": template_repo,
                 "branch": target_branch,
@@ -257,7 +237,6 @@ class BenchmarkRunner:
                 template_repo=template_repo,
                 secrets=secrets,
                 variables=variables,
-                substitution_map=substitution_map,
             )
             self._sync_repo_name(self.gh_client.repo_name)
             result["repo"] = self.repo_name

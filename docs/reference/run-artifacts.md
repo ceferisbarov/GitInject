@@ -29,11 +29,11 @@ Files for later phases may be absent when execution fails early.
 | --- | --- |
 | `schema_version` | Currently `1`. |
 | `attempt_id`, `timestamp` | UUID hex identifier and UTC creation time. |
-| `spec` | Workflow/scenario identifiers, parameters, seed, parent attempt, attack, cleanup, unaligned mode. |
+| `spec` | Workflow/scenario identifiers, parameters, seed, parent attempt, attack, cleanup. |
 | `inputs` | Saved input paths grouped by label with SHA-256 hashes. |
 | `source_revision`, `source_dirty` | Local Git revision and dirty state when available. |
 | `actors` | Role-to-authenticated-login mapping from preflight. |
-| `configuration` | Secret names, variable values, substitutions, required actors, template, branch, workflow metadata, security evaluator source. |
+| `configuration` | Secret names, variable values, required actors, template, branch, workflow metadata, security evaluator source. |
 
 The runner loads/provisions saved scenario and workflow inputs, rather than continuing to use their original directories. The manifest does not serialize secret configuration values or the Python implementation of a caller-provided evaluator.
 

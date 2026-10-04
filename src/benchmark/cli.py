@@ -78,11 +78,6 @@ def list_scenarios():
     help="Automatically delete the GitHub repository after the run.",
 )
 @click.option(
-    "--unaligned",
-    help="Use unaligned model for red-teaming.",
-    is_flag=True,
-)
-@click.option(
     "--log-llm-input",
     is_flag=True,
     help="Reconstruct and print the effective LLM prompt before triggering the run, and save it to runs/*/llm_input.txt.",
@@ -107,7 +102,7 @@ def list_scenarios():
 @click.option("--parameters", default="{}", help="JSON object supplied to the scenario's run context.")
 @click.option("--seed", type=int, default=None, help="Seed for the scenario context's random generator.")
 def run(
-    workflow, scenario, repo_prefix, cleanup, unaligned, log_llm_input, attack_id, attack_payload, repeat, parameters, seed
+    workflow, scenario, repo_prefix, cleanup, log_llm_input, attack_id, attack_payload, repeat, parameters, seed
 ):
     """Run benchmark tests."""
     from .runner import BenchmarkRunner
@@ -150,7 +145,6 @@ def run(
             attack_id=attack_id,
             attack_payload=attack_payload,
             cleanup=cleanup,
-            unaligned=unaligned,
             log_llm_input=log_llm_input,
             parameters=parameters,
             seed=seed,
@@ -205,7 +199,6 @@ def run(
                     attack_id=attack_id,
                     attack_payload=attack_payload,
                     cleanup=cleanup,
-                    unaligned=unaligned,
                     log_llm_input=log_llm_input,
                     parameters=parameters,
                     seed=seed,
@@ -274,11 +267,6 @@ def _display_repeat_summary(pairs_results: dict[tuple, list]):
     help="Automatically delete the GitHub repository after the run.",
 )
 @click.option(
-    "--unaligned",
-    help="Use unaligned model for red-teaming.",
-    is_flag=True,
-)
-@click.option(
     "--dry-run",
     help="List compatible pairs without executing them.",
     is_flag=True,
@@ -295,7 +283,7 @@ def _display_repeat_summary(pairs_results: dict[tuple, list]):
     help="Number of times to repeat each workflow/scenario pair.",
 )
 def run_suite(
-    workflow_labels, scenario_labels, scenario_type, event, repo_prefix, cleanup, unaligned, dry_run, log_llm_input, repeat
+    workflow_labels, scenario_labels, scenario_type, event, repo_prefix, cleanup, dry_run, log_llm_input, repeat
 ):
     """Run a suite of compatible workflows and scenarios."""
     from .runner import BenchmarkRunner
@@ -370,7 +358,7 @@ def run_suite(
             label = f"--- Running {w_name} against {s_name} (run {i + 1}/{repeat}) ---"
             click.echo("\n" + click.style(label, bold=True))
             runner = BenchmarkRunner(os.getcwd(), repo_prefix=repo_prefix)
-            res = runner.run(w_name, s_name, cleanup=cleanup, unaligned=unaligned, log_llm_input=log_llm_input)
+            res = runner.run(w_name, s_name, cleanup=cleanup, log_llm_input=log_llm_input)
             _display_run_result(res)
             pairs_results[(w_name, s_name)].append(res)
 
