@@ -1,6 +1,8 @@
 # Author Python scenarios
 
-Create `src/gitinject/scenarios/malicious/<id>/scenario.py` for an attack, or use `benign/` for a utility baseline. A module must define exactly one concrete `AbstractScenario` subclass. Keep static repository fixtures under a neighboring `contents/` directory.
+Create `scenarios/malicious/<id>/scenario.py` in your experiment directory for an attack, or use `benign/` for a utility baseline. In a source checkout, contribute under `src/gitinject/scenarios/` instead. A module must define exactly one concrete `AbstractScenario` subclass. Keep static repository fixtures under a neighboring `contents/` directory.
+
+A workspace `scenarios/` directory replaces the bundled scenario catalog. You can also pass an individual scenario directory or file path to `--scenario` without creating a workspace catalog; see [experiment workspaces](../getting-started/installation.md#experiment-workspace).
 
 Python definitions run as ordinary trusted Python code during discovery and loading. They are not sandboxed by the scenario loader.
 
@@ -40,7 +42,7 @@ class IssueMarker(AbstractScenario):
 Select an issue workflow, such as `cline-assistant`, whose actual trigger accepts this input. This example leaves utility unconfigured, so its utility verdict is unknown.
 
 ```bash
-uv run gitinject run \
+gitinject run \
   --workflow cline-assistant --scenario /absolute/path/to/issue-marker
 ```
 
