@@ -11,7 +11,6 @@
 | `attack_id`, `attack_payload` | Named strategy and optional static input. |
 | `attack` | An explicit `AbstractAttack`; takes precedence over strategy construction. |
 | `cleanup` | Run cleanup and repository deletion; defaults to true. |
-| `unaligned` | Enable action substitutions; a string selects a replacement tag. |
 | `log_llm_input` | Print/save a reconstructed diagnostic prompt. |
 | `parameters` | JSON-serializable object supplied to `RunContext`. |
 | `seed` | Optional integer seed for `context.rng`. |

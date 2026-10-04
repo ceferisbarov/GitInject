@@ -91,19 +91,13 @@ Contains local clones/forks of the AI GitHub Actions being benchmarked. This all
 - **Performance Reports**: Periodic reports that analyze the utility vs. security trade-offs for different agent configurations.
 - **Run Artifacts**: Detailed logs and metadata from individual benchmark runs, stored for auditing and analysis.
 
-### 2.6 Model Substitution Layer (Adversarial)
-- **Centralized Registry (`src/benchmark/config/adversarial_swaps.json`)**: A global mapping of official GitHub Actions to their non-aligned "Shadow" counterparts.
-- **YAML Transformer**: Integrated into the `RepoProvisioner`, this component performs real-time patching of `uses:` statements in workflow definitions to inject red-team forks during unaligned runs.
-- **Tag-Based Red-Teaming**: Encapsulates adversarial model configurations within Git tags/branches (e.g., `@mistral`) of the shadow actions, ensuring clean isolation of the test environment.
-
 ## 3. Evaluation Lifecycle
 
-1.  **Selection**: User selects a Workflow, Scenario, and optional Attack/Unaligned mode.
+1.  **Selection**: User selects a Workflow, Scenario, and optional Attack.
 2.  **Provisioning**:
     - The **Runner** generates a unique repository name.
     - The **Provisioner** sets up the repository.
-    - **Adversarial Patching**: If `--unaligned` is enabled, the Provisioner swaps actions using the global registry.
-    - The Provisioner pushes the (potentially patched) workflow and static files.
+    - The Provisioner pushes the workflow and static files.
 
 3.  **State Preparation**:
     - The **Scenario** executes `setup_state` to create dynamic objects (Issues, PRs).

@@ -61,12 +61,6 @@ uv run python -m src.benchmark.cli cleanup --prefix benchmark-run
 
 Bulk cleanup filters by name prefix among up to 100 listed repositories. It does not use the attempt ownership journal. Choose a dedicated prefix and review the displayed list; scanner runs default to `benchmark-scan` and need that prefix instead.
 
-## Model substitutions
-
-`--unaligned` replaces action references using `src/benchmark/config/adversarial_swaps.json` plus workflow-specific `adversarial_swaps`. It uses the `mistral` tag for replacements without a tag. The library also accepts a tag string for `unaligned`. Effective substitutions are saved in the manifest.
-
-This mode bypasses provider and workflow-required credential preflight, but still needs the secrets and access required by the replacement workflow. Scenario-required secrets are still checked. Use it when the substitution is part of the experiment, and label those results separately.
-
 ## Reproduce the bundled paper attacks
 
 The helper script runs these eleven pairs. Create a private, gitignored `references/run.sh` exporting your experiment credentials, or export them before invoking the script.

@@ -1,7 +1,5 @@
 import os
 
-import click
-
 from .gh_client import GitHubClient
 
 
@@ -30,7 +28,6 @@ class RepoProvisioner:
         template_repo: str = None,
         secrets: dict = None,
         variables: dict = None,
-        substitution_map: dict = None,
     ):
         """Create and configure a fresh repository, failing on incomplete setup."""
         if self._owns_repo:
@@ -75,7 +72,7 @@ class RepoProvisioner:
         for path in scenario_files:
             if path in workflow_files:
                 raise ProvisioningError(f"File defined by both workflow and scenario: {path}")
-        additions = {path: self._get_content(path, content, substitution_map) for path, content in workflow_files.items()}
+        additions = {path: self._get_content(content) for path, content in workflow_files.items()}
         self._require(
             self.gh_client.batch_sync(additions, [".github/workflows/"], "provision workflows", default_branch),
             "Sync workflows",
@@ -83,9 +80,7 @@ class RepoProvisioner:
         if target_branch != default_branch and not self.gh_client.get_branch_info(target_branch):
             self._require(self.gh_client.create_branch(target_branch, default_branch), "Create target branch")
         if scenario_files:
-            additions = {
-                path: self._get_content(path, content, substitution_map) for path, content in scenario_files.items()
-            }
+            additions = {path: self._get_content(content) for path, content in scenario_files.items()}
             self._require(
                 self.gh_client.batch_sync(additions, [], "provision scenario files", target_branch), "Sync scenario"
             )
@@ -95,8 +90,8 @@ class RepoProvisioner:
                 "Create PR comparison commit",
             )
 
-    def _get_content(self, repo_path, content_or_path, substitution_map):
-        """Reads and optionally patches file content."""
+    def _get_content(self, content_or_path):
+        """Reads file content or returns an inline value."""
         content = content_or_path
         is_binary = False
         if isinstance(content_or_path, str) and os.path.exists(content_or_path):
@@ -104,28 +99,12 @@ class RepoProvisioner:
                 content = f.read()
                 try:
                     content = content.decode("utf-8")
-                    if substitution_map and (repo_path.endswith(".yml") or repo_path.endswith(".yaml")):
-                        content = self._patch_yaml(content, substitution_map)
                 except UnicodeDecodeError:
                     is_binary = True
 
         if is_binary:
             return content.decode("latin-1")
         return content
-
-    def _patch_yaml(self, content: str, substitution_map: dict) -> str:
-        """Replaces official action references with adversarial forks/tags."""
-        import re
-
-        patched_content = content
-        for original, replacement in substitution_map.items():
-            pattern = rf"uses:\s*['\"]?{re.escape(original)}['\"]?"
-            replacement_str = f"uses: {replacement}"
-            if re.search(pattern, patched_content):
-                click.echo(click.style(f"  PATCHED: Swapping '{original}' -> '{replacement}'", fg="cyan"))
-                patched_content = re.sub(pattern, replacement_str, patched_content)
-
-        return patched_content
 
     def teardown(self):
         """Clean up a repository created by this provisioner, retaining ownership on failure."""
