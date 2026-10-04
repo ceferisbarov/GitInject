@@ -32,11 +32,13 @@ GitInject accompanies *GitInject: Real-World Prompt Injection Attacks in AI-Powe
 
 ```bibtex
 @article{isbarov2026gitinject,
-  title   = {GitInject: Real-World Prompt Injection Attacks in AI-Powered CI/CD Pipelines},
-  author  = {Isbarov, Jafar and Suleymanov, Umid and Shumailov, Ilia and Kantarcioglu, Murat},
-  journal = {arXiv preprint arXiv:2606.09935},
-  year    = {2026},
-  url     = {https://arxiv.org/abs/2606.09935}
+      title={{GitInject: Real-World Prompt Injection Attacks in AI-Powered CI/CD Pipelines}}, 
+      author={Jafar Isbarov and Umid Suleymanov and Ilia Shumailov and Murat Kantarcioglu},
+      year={2026},
+      eprint={2606.09935},
+      archivePrefix={arXiv},
+      primaryClass={cs.CR},
+      url={https://arxiv.org/abs/2606.09935}, 
 }
 ```
 
