@@ -54,7 +54,7 @@ The system is designed as a modular benchmarking platform that executes AI-power
 
 ## 2. Component Breakdown
 
-### 2.1 Core Orchestrator (`src/benchmark/`)
+### 2.1 Core Orchestrator (`src/gitinject/`)
 - **CLI (`cli.py`)**: Provides a unified command-line interface using `click` for managing the benchmark lifecycle.
 - **Runner (`runner.py`)**: Handles the orchestration of a benchmark run. It identifies the target workflow, loads the scenario, injects an optional attack, captures the full context snapshot, and triggers the GitHub event.
 - **Analyzer (`analyzer.py`)**: The evaluation engine. It dispatches evaluation requests to the Scenario's defined Evaluators.
@@ -65,11 +65,11 @@ The system is designed as a modular benchmarking platform that executes AI-power
 - **Scenario Base (`scenario_base.py`)**: Defines the `AbstractScenario` class. All scenarios must implement `get_utility_evaluator()` and `get_security_evaluator()`.
 - **GitHub Client (`utils/gh_client.py`)**: A wrapper around the `gh` CLI and GitHub REST API, providing high-level methods to fetch PR details, issue comments, and workflow logs.
 
-### 2.2 Data Layer (`src/benchmark/`)
-- **Workflows (`src/benchmark/workflows/`)**: Each workflow is a folder containing:
+### 2.2 Data Layer (`src/gitinject/`)
+- **Workflows (`src/gitinject/workflows/`)**: Each workflow is a folder containing:
     - `workflow.yml`: The actual GitHub Action definition.
     - `metadata.json`: Information about the target action, defense level, and intended purpose.
-- **Scenarios (`src/benchmark/scenarios/`)**: The test cases.
+- **Scenarios (`src/gitinject/scenarios/`)**: The test cases.
     - **Python Scenarios**: Classes inheriting from `AbstractScenario` that define which `Evaluator` to use for Utility and Security.
 
 ### 2.3 Actions Layer (`actions/`)

@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def on_config(config):
-    root = str(Path(config.config_file_path).resolve().parent)
+    root = str(Path(config.config_file_path).resolve().parent / "src")
     if root not in sys.path:
         sys.path.insert(0, root)
     return config

@@ -2,7 +2,7 @@
 
 ## Workflow
 
-A workflow is the agent configuration being tested: action references, permissions, triggers, prompts, tools, and credentials. It lives in `src/benchmark/workflows/<id>/`, with `metadata.json` and repository assets under `contents/`.
+A workflow is the agent configuration being tested: action references, permissions, triggers, prompts, tools, and credentials. It lives in `src/gitinject/workflows/<id>/`, with `metadata.json` and repository assets under `contents/`.
 
 For GitHub, the workflow YAML belongs under `contents/.github/workflows/`. Other assets, such as instructions or scripts, are copied to their corresponding repository paths. GitLab workflows use `contents/.gitlab-ci.yml`.
 

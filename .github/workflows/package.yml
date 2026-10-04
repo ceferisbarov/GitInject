@@ -1,0 +1,64 @@
+name: Package
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked
+      - run: uv run --no-sync pytest tests/unit/
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.13"
+      - name: Build wheel and source distribution
+        run: uv build
+      - name: Check PyPI metadata and README
+        run: uvx --from twine twine check --strict dist/*
+      - name: Verify uv add and the installed Python API
+        run: |
+          uv init --bare --python 3.13 "$RUNNER_TEMP/gitinject-consumer"
+          cd "$RUNNER_TEMP/gitinject-consumer"
+          uv add "$GITHUB_WORKSPACE"/dist/*.whl
+          uv run python "$GITHUB_WORKSPACE/scripts/check_distribution.py" --require-installed
+          uv run gitinject --help
+          uv run python -m gitinject --help
+      - name: Verify standalone tool installation
+        env:
+          UV_TOOL_DIR: ${{ runner.temp }}/gitinject-tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}/gitinject-bin
+        run: |
+          uv tool install dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$UV_TOOL_BIN_DIR/gitinject" list workflows
+          "$UV_TOOL_BIN_DIR/gitinject" list scenarios
+          "$UV_TOOL_BIN_DIR/gitinject" run-suite --workflow-labels codex --scenario-type benign --dry-run
+      - name: Upload release distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/*
+          if-no-files-found: error

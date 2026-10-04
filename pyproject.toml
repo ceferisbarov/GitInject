@@ -1,17 +1,30 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
 [project]
-name = "sequrity-playground"
+name = "gitinject"
 version = "0.1.0"
-description = "Add your description here"
+description = "Evaluate prompt injection in real AI-powered CI/CD workflows"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{name = "Jafar Isbarov"}, {name = "Umid Suleymanov"}]
 requires-python = ">=3.13"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+]
 dependencies = [
     "anthropic>=0.96.0",
     "click>=8.3.1",
     "google-genai>=1.67.0",
-    "ipykernel>=7.2.0",
     "jinja2>=3.1.6",
     "openai>=2.29.0",
-    "pre-commit>=4.5.1",
     "pygithub>=2.9.0",
     "python-gitlab>=8.3.0",
     "pyyaml>=6.0.3",
@@ -20,8 +33,19 @@ dependencies = [
     "tenacity>=9.1.4",
 ]
 
+[project.scripts]
+gitinject = "gitinject.cli:cli"
+
+[project.urls]
+Documentation = "https://ceferisbarov.github.io/GitInject/"
+Repository = "https://github.com/ceferisbarov/GitInject"
+Issues = "https://github.com/ceferisbarov/GitInject/issues"
+Paper = "https://arxiv.org/abs/2606.09935"
+
 [dependency-groups]
 dev = [
+    "ipykernel>=7.2.0",
+    "pre-commit>=4.5.1",
     "pytest>=9.0.2",
     "pytest-mock>=3.15.1",
 ]
@@ -31,6 +55,30 @@ docs = [
     "mkdocs-gen-files>=0.5,<1",
     "mkdocs-material>=9.6,<10",
     "mkdocstrings[python]>=0.30,<2",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gitinject"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"research/scenarios" = "gitinject/data/research/scenarios"
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "src/gitinject",
+    "research/scenarios",
+    "tests",
+    "scripts",
+    "docs",
+    "mkdocs.yml",
+    "README.md",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "pyproject.toml",
+    "uv.lock",
+    ".python-version",
+    ".github/workflows",
+    ".pre-commit-config.yaml",
 ]
 
 [tool.ruff]

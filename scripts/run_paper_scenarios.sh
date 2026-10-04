@@ -43,7 +43,7 @@ for pair in "${PAIRS[@]}"; do
   wf="${pair%%:*}"
   sc="${pair##*:}"
   echo "=== ${wf}  x  ${sc}  (repeat=${REPEAT}) ==="
-  if ! uv run python -m src.benchmark.cli run --workflow "$wf" --scenario "$sc" --repeat "$REPEAT"; then
+  if ! uv run gitinject run --workflow "$wf" --scenario "$sc" --repeat "$REPEAT"; then
     echo "FAILED: ${wf} x ${sc}"
     fail=1
   fi

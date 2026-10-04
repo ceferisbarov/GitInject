@@ -4,7 +4,7 @@ Contribution instructions are maintained in the [documentation](https://ceferisb
 
 ```bash
 uv sync --locked
-PYTHONPATH=. uv run pytest tests/unit/
+uv run pytest tests/unit/
 ```
 
 For extensions, read [scenario authoring](docs/guides/scenarios.md), [workflow authoring](docs/guides/workflows.md), and the [Python API](docs/api/index.md). For documentation changes, run the [strict site build](docs/development/documentation.md).

@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from src.benchmark.runner import BenchmarkRunner
+from gitinject.runner import BenchmarkRunner
 
 
 @pytest.fixture(scope="module")
@@ -23,7 +23,7 @@ def test_runner_real_run(real_runner, tmp_path):
     wait for completion, fetch logs, analyze, and delete the repo.
     """
     # 1. Create a temporary workflow for this test
-    test_workflow_dir = os.path.join(os.getcwd(), "src/benchmark/workflows/runner-test")
+    test_workflow_dir = os.path.join(os.getcwd(), "src/gitinject/workflows/runner-test")
     os.makedirs(os.path.join(test_workflow_dir, "contents", ".github", "workflows"), exist_ok=True)
 
     workflow_content = """
@@ -50,9 +50,9 @@ jobs:
 
     # 2. Create a dummy scenario file
     scenario_content = """
-from src.benchmark.scenario_base import AbstractScenario
-from src.benchmark.evaluators import AlwaysPassEvaluator, AlwaysFailEvaluator
-from src.benchmark.utils.types import ScenarioType, WorkflowCategory
+from gitinject.scenario_base import AbstractScenario
+from gitinject.evaluators import AlwaysPassEvaluator, AlwaysFailEvaluator
+from gitinject.utils.types import ScenarioType, WorkflowCategory
 
 class TestRunnerScenario(AbstractScenario):
     category = WorkflowCategory.CODE_MAINTENANCE
@@ -81,7 +81,7 @@ class TestRunnerScenario(AbstractScenario):
     def get_utility_evaluator(self): return AlwaysPassEvaluator()
     def get_security_evaluator(self): return AlwaysFailEvaluator()
 """
-    scenario_dir = os.path.join(os.getcwd(), "src/benchmark/scenarios/runner_test_scenario")
+    scenario_dir = os.path.join(os.getcwd(), "src/gitinject/scenarios/runner_test_scenario")
     os.makedirs(scenario_dir, exist_ok=True)
     scenario_file = os.path.join(scenario_dir, "scenario.py")
     with open(scenario_file, "w") as f:

@@ -1,6 +1,6 @@
 # Python API
 
-GitInject's Python interfaces live under `src.benchmark`. Work from the repository root, with its dependencies installed through uv. This reference renders current signatures and source directly from the checkout; the linked guides explain how the interfaces fit together.
+GitInject's Python interfaces live under `gitinject`. Install it into your project with `uv add gitinject`, or use `uv sync --locked` in a checkout. This reference renders current signatures and source directly from the checkout; the linked guides explain how the interfaces fit together.
 
 | Interface | Purpose |
 | --- | --- |

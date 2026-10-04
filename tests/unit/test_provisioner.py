@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.benchmark.utils.provisioner import ProvisioningError, RepoProvisioner
+from gitinject.utils.provisioner import ProvisioningError, RepoProvisioner
 
 
 @pytest.fixture

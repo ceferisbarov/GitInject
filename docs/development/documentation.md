@@ -16,7 +16,7 @@ The build needs no GitHub/provider credentials. mkdocstrings extracts APIs stati
 
 ## Maintain the site
 
-Navigation, canonical URL, theme, plugins, and Markdown extensions are configured in `mkdocs.yml`. Write pages under `docs/` and add them to navigation. API pages use `::: src.benchmark...` directives, with explanatory prose for behavior not captured in source docstrings.
+Navigation, canonical URL, theme, plugins, and Markdown extensions are configured in `mkdocs.yml`. Write pages under `docs/` and add them to navigation. API pages use `::: gitinject...` directives, with explanatory prose for behavior not captured in source docstrings.
 
 Generated catalogs are virtual build files; edit workflow metadata or scenario declarations rather than a catalog output. They link to source definitions in the repository. Dynamic declarations may appear as `dynamic`; the CLI listing resolves them by loading trusted scenario code.
 

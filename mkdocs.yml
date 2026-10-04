@@ -46,7 +46,7 @@ plugins:
   - mkdocstrings:
       handlers:
         python:
-          paths: [ . ]
+          paths: [ src ]
           options:
             allow_inspection: false
             docstring_style: sphinx
@@ -118,3 +118,4 @@ nav:
   - Development:
       - Contributing: development/contributing.md
       - Build and publish the docs: development/documentation.md
+      - Package releases: development/releases.md

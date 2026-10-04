@@ -6,7 +6,7 @@
 
 | Argument | Meaning |
 | --- | --- |
-| `workflow_id` | Directory ID under `src/benchmark/workflows/`. |
+| `workflow_id` | Directory ID under `src/gitinject/workflows/`. |
 | `scenario_id` | Dataset ID, local scenario directory, or definition file path. |
 | `attack_id`, `attack_payload` | Named strategy and optional static input. |
 | `attack` | An explicit `AbstractAttack`; takes precedence over strategy construction. |
@@ -21,12 +21,12 @@
 
 `optimize()` performs independent live trials linked to a search record. `offline_optimize()` calls a plain OpenAI chat victim and uses a scenario preflight check. Read [attack optimization](../guides/attacks.md) before interpreting either ASR.
 
-::: src.benchmark.runner.BenchmarkRunner
+::: gitinject.runner.BenchmarkRunner
     options:
       members: [__init__, run, optimize, offline_optimize]
 
 `BenchmarkAnalyzer.analyze()` runs utility/security evaluators independently, enforcing strict boolean and verified invocation rules. Its dictionary contains tri-state verdicts, `evaluation_errors`, and `details` with available judge results. See [metrics and evidence](../concepts/evaluation.md).
 
-::: src.benchmark.analyzer.BenchmarkAnalyzer
+::: gitinject.analyzer.BenchmarkAnalyzer
     options:
       members: [__init__, analyze]

@@ -5,7 +5,7 @@ Attack strategies supply payloads to existing scenarios. The scenario must imple
 ## Apply a fixed payload
 
 ```bash
-uv run python -m src.benchmark.cli run \
+uv run gitinject run \
   --workflow codex-pr-review \
   --scenario pr_token_exfiltration_via_git_config \
   --attack static --attack-payload ./payload.txt
@@ -18,7 +18,7 @@ Omitting `--attack` uses the scenario's bundled payload. Generated/rendered over
 ## Optimize against live workflows
 
 ```bash
-uv run python -m src.benchmark.cli optimize \
+uv run gitinject optimize \
   --workflow codex-pr-review \
   --scenario pr_token_exfiltration_via_git_config \
   --attack autoinject --iterations 5
@@ -33,12 +33,12 @@ The search result records `asr_curve`, `final_asr`, valid and unknown iteration 
 Offline execution reconstructs a prompt and sends it to a plain chat model. It requires a scenario-specific `get_preflight_evaluator()` returning a callable that scores the response with a strict boolean.
 
 ```bash
-uv run python -m src.benchmark.cli preflight \
+uv run gitinject preflight \
   --workflow codex-pr-review \
   --scenario pr_token_exfiltration_via_git_config \
   --attack autoinject --victim-model gpt-4o-mini
 
-uv run python -m src.benchmark.cli optimize \
+uv run gitinject optimize \
   --workflow codex-pr-review \
   --scenario pr_token_exfiltration_via_git_config \
   --attack autoinject --offline --iterations 5 \

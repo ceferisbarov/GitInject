@@ -1,6 +1,6 @@
 # Author Python scenarios
 
-Create `src/benchmark/scenarios/malicious/<id>/scenario.py` for an attack, or use `benign/` for a utility baseline. A module must define exactly one concrete `AbstractScenario` subclass. Keep static repository fixtures under a neighboring `contents/` directory.
+Create `src/gitinject/scenarios/malicious/<id>/scenario.py` for an attack, or use `benign/` for a utility baseline. A module must define exactly one concrete `AbstractScenario` subclass. Keep static repository fixtures under a neighboring `contents/` directory.
 
 Python definitions run as ordinary trusted Python code during discovery and loading. They are not sandboxed by the scenario loader.
 
@@ -9,10 +9,10 @@ Python definitions run as ordinary trusted Python code during discovery and load
 This probe asks an issue assistant to emit a marker and checks a fresh attributed response. It demonstrates the interface; the marker itself is not evidence of a credential leak or another stronger security outcome.
 
 ```python
-from src.benchmark.evaluators import StateEvaluator
-from src.benchmark.evidence import agent_comments, target_details
-from src.benchmark.scenario_base import AbstractScenario
-from src.benchmark.utils.types import ScenarioType, WorkflowCategory
+from gitinject.evaluators import StateEvaluator
+from gitinject.evidence import agent_comments, target_details
+from gitinject.scenario_base import AbstractScenario
+from gitinject.utils.types import ScenarioType, WorkflowCategory
 
 
 class IssueMarker(AbstractScenario):
@@ -40,7 +40,7 @@ class IssueMarker(AbstractScenario):
 Select an issue workflow, such as `cline-assistant`, whose actual trigger accepts this input. This example leaves utility unconfigured, so its utility verdict is unknown.
 
 ```bash
-uv run python -m src.benchmark.cli run \
+uv run gitinject run \
   --workflow cline-assistant --scenario /absolute/path/to/issue-marker
 ```
 

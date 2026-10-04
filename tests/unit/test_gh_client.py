@@ -3,14 +3,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 from github import GithubException
 
-from src.benchmark.utils.gh_client import GitHubClient
+from gitinject.utils.gh_client import GitHubClient
 
 
 @pytest.fixture
 def mock_github():
-    with patch("src.benchmark.utils.gh_client.Github") as mock:
+    with patch("gitinject.utils.gh_client.Github") as mock:
         # Mock the token retrieval to avoid subprocess calls during init
-        with patch("src.benchmark.utils.gh_client.GitHubClient._get_token", return_value="fake-token"):
+        with patch("gitinject.utils.gh_client.GitHubClient._get_token", return_value="fake-token"):
             yield mock
 
 

@@ -10,21 +10,21 @@ import requests
 from click.testing import CliRunner
 from github import GithubException
 
-from src.benchmark.attacks import load_attack
-from src.benchmark.cli import cli
-from src.benchmark.evaluators import StateEvaluator
-from src.benchmark.run_context import RunContext, TriggerReceipt
-from src.benchmark.run_record import RunRecord, RunSpec
-from src.benchmark.runner import BenchmarkRunner
-from src.benchmark.scanner.recipe_scenario import write_recipe
-from src.benchmark.scanner.types import AttackHypothesis, SuccessCheck, TriggerSpec
-from src.benchmark.scenario_loader import discover_scenario_paths, find_scenario, load_scenario
-from src.benchmark.utils.gh_client import GitHubClient
+from gitinject.attacks import load_attack
+from gitinject.cli import cli
+from gitinject.evaluators import StateEvaluator
+from gitinject.run_context import RunContext, TriggerReceipt
+from gitinject.run_record import RunRecord, RunSpec
+from gitinject.runner import BenchmarkRunner
+from gitinject.scanner.recipe_scenario import write_recipe
+from gitinject.scanner.types import AttackHypothesis, SuccessCheck, TriggerSpec
+from gitinject.scenario_loader import discover_scenario_paths, find_scenario, load_scenario
+from gitinject.utils.gh_client import GitHubClient
 
 
 @pytest.fixture
 def client():
-    with patch("src.benchmark.utils.gh_client.Github") as sdk:
+    with patch("gitinject.utils.gh_client.Github") as sdk:
         sdk.return_value.base_url = "https://api.github.com"
         sdk.return_value.get_user.return_value.login = "owner"
         yield GitHubClient(repo="owner/trial", token="test-secret")
@@ -113,12 +113,12 @@ def make_recipe(root, identifier="recipe"):
 
 
 def test_shared_discovery_loads_python_and_recipes_without_credentials(tmp_path, monkeypatch):
-    dataset = tmp_path / "src/benchmark/scenarios"
+    dataset = tmp_path / "src/gitinject/scenarios"
     python = dataset / "benign/python"
     python.mkdir(parents=True)
     definition = python / "scenario.py"
     definition.write_text(
-        "from src.benchmark.scenario_base import AbstractScenario\nclass Example(AbstractScenario): pass\n"
+        "from gitinject.scenario_base import AbstractScenario\nclass Example(AbstractScenario): pass\n"
     )
     payload = python / "contents/pretend-scenario"
     payload.mkdir(parents=True)
@@ -130,7 +130,7 @@ def test_shared_discovery_loads_python_and_recipes_without_credentials(tmp_path,
     assert find_scenario(dataset, str(recipe.parent)) == recipe
     assert load_scenario(definition, str(tmp_path)).runtime_state == {}
     monkeypatch.chdir(tmp_path)
-    with patch("src.benchmark.runner.GitHubClient", side_effect=AssertionError("No authentication for discovery")):
+    with patch("gitinject.runner.GitHubClient", side_effect=AssertionError("No authentication for discovery")):
         result = CliRunner().invoke(cli, ["list", "scenarios"])
     assert result.exit_code == 0, result.output
     assert "python" in result.output and "recipe" in result.output
@@ -140,7 +140,7 @@ def test_python_loader_supports_dataclasses_and_does_not_reuse_stale_bytecode(tm
     definition = tmp_path / "scenario.py"
     definition.write_text(
         "from dataclasses import dataclass\n"
-        "from src.benchmark.scenario_base import AbstractScenario\n"
+        "from gitinject.scenario_base import AbstractScenario\n"
         "@dataclass\nclass State:\n    value: str = 'first'\n"
         "class Example(AbstractScenario):\n    state = State()\n"
     )
@@ -174,9 +174,9 @@ def test_recipe_is_validated_on_load_and_rendered_fields_reach_event(tmp_path):
         load_scenario(path, str(tmp_path))
 
 
-CUSTOM_SCENARIO = """from src.benchmark.scenario_base import AbstractScenario
-from src.benchmark.run_context import TriggerReceipt
-from src.benchmark.evaluators import StateEvaluator
+CUSTOM_SCENARIO = """from gitinject.scenario_base import AbstractScenario
+from gitinject.run_context import TriggerReceipt
+from gitinject.evaluators import StateEvaluator
 
 class CustomAttack(AbstractScenario):
     required_actors = ("owner", "attacker")
@@ -201,15 +201,15 @@ class CustomAttack(AbstractScenario):
 
 
 def research_runner(tmp_path, client, with_attacker=True):
-    workflow = tmp_path / "src/benchmark/workflows/wf"
+    workflow = tmp_path / "src/gitinject/workflows/wf"
     workflow.mkdir(parents=True)
     (workflow / "main.yml").write_text("on: pull_request_review_comment\njobs: {}\n")
     (workflow / "metadata.json").write_text(json.dumps({"agent_steps": ["Agent"]}))
-    definition = tmp_path / "src/benchmark/scenarios/malicious/custom/scenario.py"
+    definition = tmp_path / "src/gitinject/scenarios/malicious/custom/scenario.py"
     definition.parent.mkdir(parents=True)
     definition.write_text(CUSTOM_SCENARIO)
     if with_attacker:
-        with patch("src.benchmark.utils.gh_client.Github", return_value=client.gh):
+        with patch("gitinject.utils.gh_client.Github", return_value=client.gh):
             attacker = GitHubClient(token="attacker-secret", actor="attacker")
     else:
         attacker = client

@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from src.benchmark.utils.gh_client import GitHubClient
+from gitinject.utils.gh_client import GitHubClient
 
 
 def resolve_owner():

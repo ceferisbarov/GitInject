@@ -19,7 +19,7 @@ def source_link(path, label):
 
 
 def enum_values():
-    tree = ast.parse((ROOT / "src/benchmark/utils/types.py").read_text())
+    tree = ast.parse((ROOT / "src/gitinject/utils/types.py").read_text())
     values = {}
     for node in tree.body:
         if isinstance(node, ast.ClassDef):
@@ -49,7 +49,7 @@ with mkdocs_gen_files.open("reference/workflows.md", "w") as handle:
     handle.write("Metadata describes selection; inspect the YAML for actual triggers and permissions.\n\n")
     handle.write("| Workflow | Platform | Provider | Category | Supported events |\n")
     handle.write("| --- | --- | --- | --- | --- |\n")
-    for path in sorted((ROOT / "src/benchmark/workflows").glob("*/metadata.json")):
+    for path in sorted((ROOT / "src/gitinject/workflows").glob("*/metadata.json")):
         metadata = json.loads(path.read_text())
         row = [
             source_link(path, f"`{path.parent.name}`"),
@@ -68,7 +68,7 @@ with mkdocs_gen_files.open("reference/scenarios.md", "w") as handle:
     handle.write("Dynamic declarations are shown as `dynamic`; use the CLI listing to resolve trusted scenario code.\n\n")
     handle.write("| Scenario | Type | Platform | Category | Event | Required actors |\n")
     handle.write("| --- | --- | --- | --- | --- | --- |\n")
-    for path in sorted((ROOT / "src/benchmark/scenarios").glob("*/*/scenario.py"), key=lambda p: p.parent.name):
+    for path in sorted((ROOT / "src/gitinject/scenarios").glob("*/*/scenario.py"), key=lambda p: p.parent.name):
         tree = ast.parse(path.read_text())
         classes = [
             node for node in tree.body

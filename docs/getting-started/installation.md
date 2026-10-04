@@ -1,15 +1,54 @@
 # Installation and configuration
 
-Run commands from the repository root. The project requires Python **3.13 or newer**, [uv](https://docs.astral.sh/uv/), and the [GitHub CLI](https://cli.github.com/). The CLI is used for operations such as installing Actions secrets and fetching logs, even when API authentication uses an environment variable.
+The project requires Python **3.13 or newer**, [uv](https://docs.astral.sh/uv/), and the [GitHub CLI](https://cli.github.com/). The CLI is used for operations such as installing Actions secrets and fetching logs, even when API authentication uses an environment variable.
+
+## Install into a project
+
+For a released version from PyPI, add GitInject to your project's dependencies:
+
+```bash
+uv add gitinject
+uv run gitinject --help
+uv run gitinject list workflows
+```
+
+The distribution and Python import package are both named `gitinject`. Extensions can import `gitinject.runner`, `gitinject.scenario_base`, and the other modules documented in the [Python API](../api/index.md). You can also invoke the CLI with `uv run python -m gitinject`.
+
+## Install a standalone CLI
+
+```bash
+uv tool install gitinject
+gitinject --help
+```
+
+`uv tool install` creates an isolated tool environment; `uv add` installs GitInject into your project environment. Both include the workflows, scenarios, fixtures, and scanner research notes. A virtual-environment installation with `python -m pip install gitinject` works as well.
+
+To install directly from Git:
+
+```bash
+uv add gitinject --git https://github.com/ceferisbarov/GitInject.git
+# Or install the standalone CLI:
+uv tool install git+https://github.com/ceferisbarov/GitInject.git
+```
+
+## Develop or reproduce from a checkout
+
+Use a checkout and the dependency lockfile for development and paper reproduction:
 
 ```bash
 git clone https://github.com/ceferisbarov/GitInject.git
 cd GitInject
 uv sync --locked
-uv run python -m src.benchmark.cli --help
+uv run gitinject --help
 ```
 
-The distribution currently has the name `sequrity-playground`; Python imports use `src.benchmark`. Use the checked-out repository rather than assuming a `gitinject` package or executable is installed.
+Run checkout commands from the repository root. The old `src.benchmark` import path has been replaced by `gitinject`.
+
+## Experiment workspace
+
+Installed commands can run outside the checkout. The current directory is the experiment workspace: run evidence goes into `runs/`, and reports and scanner memory go into `reports/`. Bundled package assets are read-only inputs.
+
+To provide a custom dataset, create `workflows/` or `scenarios/` in the workspace. Each directory replaces the corresponding bundled catalog. In a checkout, `src/gitinject/workflows/` and `src/gitinject/scenarios/` are also discovered; legacy workspace directories under `src/benchmark/` remain supported. Scanner warm-start notes use `research/scenarios/` in the workspace when present, otherwise the bundled corpus.
 
 ## GitHub identities
 

@@ -7,8 +7,8 @@ GitHub attempts live in `runs/<attempt_id>/`. The runner creates this directory 
 Start with `metadata.json`. An `error` at the top level is an execution failure. A completed attempt can still have unknown metrics, per-metric `evaluation_errors`, log/timing errors, or `cleanup_errors`. These fields describe different problems and should be examined separately.
 
 ```bash
-uv run python -m src.benchmark.cli report
-uv run python -m src.benchmark.cli report --aggregate
+uv run gitinject report
+uv run gitinject report --aggregate
 ```
 
 The table's `Sec` column inverts `security_breached`: `T` means resistance, `F` means breach, and `?` means unknown. Aggregate summaries group by workflow across scenarios and use known-verdict denominators. Compare the scenario mix and attempt counts before comparing rates.

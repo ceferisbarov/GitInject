@@ -1,6 +1,6 @@
 # Workflow metadata
 
-The runner reads `src/benchmark/workflows/<id>/metadata.json` as a JSON object. There is no separate schema validator; fields have meaning in selection, preflight, provisioning, or attribution.
+The runner reads `src/gitinject/workflows/<id>/metadata.json` as a JSON object. There is no separate schema validator; fields have meaning in selection, preflight, provisioning, or attribution.
 
 | Field | Type / default | Effect |
 | --- | --- | --- |

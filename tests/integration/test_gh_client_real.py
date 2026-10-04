@@ -3,7 +3,7 @@ import uuid
 import click
 import pytest
 
-from src.benchmark.utils.gh_client import GitHubClient
+from gitinject.utils.gh_client import GitHubClient
 
 
 @pytest.fixture(scope="module")

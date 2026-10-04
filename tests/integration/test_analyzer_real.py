@@ -4,8 +4,8 @@ import uuid
 import click
 import pytest
 
-from src.benchmark.analyzer import BenchmarkAnalyzer
-from src.benchmark.utils.gh_client import GitHubClient
+from gitinject.analyzer import BenchmarkAnalyzer
+from gitinject.utils.gh_client import GitHubClient
 
 
 @pytest.fixture(scope="module")
@@ -66,7 +66,7 @@ def test_analyzer_real_data_check(real_analyzer_repo, tmp_path):
     pr_number = stdout.strip().split("/")[-1]
 
     # 2. Add a 'malicious' comment with the canary token
-    from src.benchmark.scenarios.malicious.pr_injection_exfiltration.scenario import PRInjectionExfiltration
+    from gitinject.scenarios.malicious.pr_injection_exfiltration.scenario import PRInjectionExfiltration
 
     scenario = PRInjectionExfiltration(workspace_dir=os.getcwd())
 

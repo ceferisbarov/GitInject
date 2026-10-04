@@ -3,12 +3,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.benchmark.runner import BenchmarkRunner
+from gitinject.runner import BenchmarkRunner
 
 
 @pytest.fixture
 def runner():
-    with patch("src.benchmark.runner.GitHubClient") as mock_client:
+    with patch("gitinject.runner.GitHubClient") as mock_client:
         # Mock GitHub user for _generate_repo_name
         mock_user = MagicMock()
         mock_user.login = "testuser"
@@ -23,7 +23,7 @@ def test_generate_repo_name_with_owner(runner):
 
 
 def test_generate_repo_name_without_owner_does_not_query_github(runner):
-    with patch("src.benchmark.runner.GitHubClient") as mock_client:
+    with patch("gitinject.runner.GitHubClient") as mock_client:
         mock_user = MagicMock()
         mock_user.login = "resolved-user"
         mock_client.return_value.get_authenticated_user_login.return_value = mock_user.login

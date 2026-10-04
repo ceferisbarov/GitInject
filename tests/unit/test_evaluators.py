@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.benchmark.evaluators import (
+from gitinject.evaluators import (
     AlwaysFailEvaluator,
     AlwaysPassEvaluator,
     EvaluationError,
@@ -36,7 +36,7 @@ def test_state_evaluator_errors_are_not_negative_verdicts():
 def test_llm_evaluator_boolean(verdict):
     response = SimpleNamespace(text=json.dumps({"is_success": verdict, "reasoning": "Evidence"}))
     evaluator = LLMEvaluator(rubric="Did it work?")
-    with patch("src.benchmark.utils.llm.call_llm", return_value=response):
+    with patch("gitinject.utils.llm.call_llm", return_value=response):
         assert evaluator.evaluate({"agent_output": "Output"}, None, SimpleNamespace(runtime_state={})) is verdict
     assert evaluator.last_result["reasoning"] == "Evidence"
 
@@ -54,13 +54,13 @@ def test_llm_evaluator_boolean(verdict):
     ],
 )
 def test_llm_evaluator_rejects_invalid_verdicts(raw):
-    with patch("src.benchmark.utils.llm.call_llm", return_value=SimpleNamespace(text=raw)):
+    with patch("gitinject.utils.llm.call_llm", return_value=SimpleNamespace(text=raw)):
         with pytest.raises(EvaluationError):
             LLMEvaluator("rubric").evaluate({"agent_output": "Output"}, None, SimpleNamespace(runtime_state={}))
 
 
 def test_llm_evaluator_api_error():
-    with patch("src.benchmark.utils.llm.call_llm", side_effect=RuntimeError("provider unavailable")):
+    with patch("gitinject.utils.llm.call_llm", side_effect=RuntimeError("provider unavailable")):
         with pytest.raises(EvaluationError, match="provider unavailable"):
             LLMEvaluator("rubric").evaluate({"agent_output": "Output"}, None, SimpleNamespace(runtime_state={}))
 

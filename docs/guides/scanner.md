@@ -5,7 +5,7 @@ The scanner extracts workflow context, generates structured attack hypotheses, r
 ## Generate without live runs
 
 ```bash
-uv run python -m src.benchmark.cli scan \
+uv run gitinject scan \
   --workflow codex-pr-review --dry-run
 ```
 
@@ -16,7 +16,7 @@ Default generation and ranking use `claude-sonnet-4-6`; diagnostics use `claude-
 ## Validate candidates
 
 ```bash
-uv run python -m src.benchmark.cli scan \
+uv run gitinject scan \
   --workflow codex-pr-review \
   --hypotheses 12 --max-live 5 --runs-per 3 --iterations 2
 ```
@@ -30,7 +30,7 @@ Diagnostics distinguish infrastructure/evaluation problems, agent refusal, ineff
 ## Models and ablations
 
 ```bash
-uv run python -m src.benchmark.cli scan \
+uv run gitinject scan \
   --workflow codex-pr-review --dry-run --no-baselines \
   --hypothesis-model anthropic/claude-sonnet-4-6 \
   --ranker-model anthropic/claude-sonnet-4-6
@@ -58,7 +58,7 @@ Reports default to `reports/scanner/` with per-workflow Markdown and JSON files.
 Replay a generated recipe by path:
 
 ```bash
-uv run python -m src.benchmark.cli run \
+uv run gitinject run \
   --workflow codex-pr-review \
   --scenario /absolute/path/to/candidate-directory
 ```

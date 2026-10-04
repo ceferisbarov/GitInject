@@ -13,11 +13,11 @@ The legacy default event trigger can use the owner when no separate event identi
 This scenario opens an issue and posts an attacker comment. The selected workflow must listen for the returned event; return the event responsible for the final run you intend to observe.
 
 ```python
-from src.benchmark.evaluators import StateEvaluator
-from src.benchmark.evidence import agent_comments, target_details
-from src.benchmark.run_context import TriggerReceipt
-from src.benchmark.scenario_base import AbstractScenario
-from src.benchmark.utils.types import ScenarioType, WorkflowCategory
+from gitinject.evaluators import StateEvaluator
+from gitinject.evidence import agent_comments, target_details
+from gitinject.run_context import TriggerReceipt
+from gitinject.scenario_base import AbstractScenario
+from gitinject.utils.types import ScenarioType, WorkflowCategory
 
 
 class CommentAttack(AbstractScenario):
@@ -86,7 +86,7 @@ The framework cleans registered repositories independently of scenario cleanup, 
 
 ```python
 from pathlib import Path
-from src.benchmark.runner import BenchmarkRunner
+from gitinject.runner import BenchmarkRunner
 
 runner = BenchmarkRunner(str(Path.cwd()), repo_prefix="research-probe")
 result = runner.run(

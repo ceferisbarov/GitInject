@@ -4,7 +4,7 @@ Work from the repository root with Python 3.13+ and uv:
 
 ```bash
 uv sync --locked
-PYTHONPATH=. uv run pytest tests/unit/
+uv run pytest tests/unit/
 ```
 
 Unit tests mock external services. Integration tests exercise live GitHub/provider operations and require dedicated test credentials; run them deliberately after reviewing their setup.

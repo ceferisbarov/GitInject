@@ -8,20 +8,20 @@ from unittest.mock import MagicMock, patch
 import pytest
 from github import GithubException
 
-from src.benchmark.cli import _metric_summary
-from src.benchmark.evaluators import EvaluationError, LLMEvaluator, StateEvaluator
-from src.benchmark.evidence import agent_comments, checkout_token_leaked
-from src.benchmark.runner import BenchmarkRunner
-from src.benchmark.scanner import diagnostics, live_validator
-from src.benchmark.scanner.primitives import PRIMITIVES
-from src.benchmark.scanner.recipe_scenario import RecipeScenario, delete_recipe, write_recipe
-from src.benchmark.scanner.types import AttackHypothesis, EffectivePromptContext, SuccessCheck, TriggerSpec
-from src.benchmark.scenarios.malicious.codex_agents_md_injection.scenario import CodexAgentsMdInjection
-from src.benchmark.scenarios.malicious.issue_onboarding_secret_exfiltration.scenario import IssueOnboardingSecretExfiltration
-from src.benchmark.scenarios.malicious.unauthorized_pr_approval.scenario import UnauthorizedPRApproval
-from src.benchmark.utils.gh_client import GitHubClient
-from src.benchmark.utils.provisioner import ProvisioningError
-from src.benchmark.utils.scenario_resources import setup_attacker_fork, teardown_attacker_fork
+from gitinject.cli import _metric_summary
+from gitinject.evaluators import EvaluationError, LLMEvaluator, StateEvaluator
+from gitinject.evidence import agent_comments, checkout_token_leaked
+from gitinject.runner import BenchmarkRunner
+from gitinject.scanner import diagnostics, live_validator
+from gitinject.scanner.primitives import PRIMITIVES
+from gitinject.scanner.recipe_scenario import RecipeScenario, delete_recipe, write_recipe
+from gitinject.scanner.types import AttackHypothesis, EffectivePromptContext, SuccessCheck, TriggerSpec
+from gitinject.scenarios.malicious.codex_agents_md_injection.scenario import CodexAgentsMdInjection
+from gitinject.scenarios.malicious.issue_onboarding_secret_exfiltration.scenario import IssueOnboardingSecretExfiltration
+from gitinject.scenarios.malicious.unauthorized_pr_approval.scenario import UnauthorizedPRApproval
+from gitinject.utils.gh_client import GitHubClient
+from gitinject.utils.provisioner import ProvisioningError
+from gitinject.utils.scenario_resources import setup_attacker_fork, teardown_attacker_fork
 
 
 def hypothesis(identifier="candidate", kind="comment_contains", **args):
@@ -95,7 +95,7 @@ def test_missing_attribution_is_an_error():
 def test_judge_gets_agent_responses_without_attacker_body_or_log_echo():
     scenario = trial(SimpleNamespace(), {"body": "ATTACKER INSTRUCTIONS", "comment_details": [artifact("Actual review")]})
     with patch(
-        "src.benchmark.utils.llm.call_llm",
+        "gitinject.utils.llm.call_llm",
         return_value=SimpleNamespace(text='{"is_success": false, "reasoning": "Resisted"}'),
     ) as call:
         assert (
@@ -109,7 +109,7 @@ def test_judge_gets_agent_responses_without_attacker_body_or_log_echo():
 
 def test_empty_response_is_not_a_successful_omission_attack():
     scenario = trial(SimpleNamespace(), {"comment_details": []})
-    with patch("src.benchmark.utils.llm.call_llm") as call:
+    with patch("gitinject.utils.llm.call_llm") as call:
         with pytest.raises(EvaluationError, match="No attributed"):
             LLMEvaluator("Missing security finding means success", evaluation_type="security").evaluate({}, None, scenario)
         call.assert_not_called()
@@ -204,7 +204,7 @@ def test_missing_replicates_cannot_confirm_or_seed_memory(tmp_path, monkeypatch,
     ]
     with (
         patch.object(live_validator, "_run_single", side_effect=results),
-        patch("src.benchmark.scanner.memory.CrossWorkflowMemory") as memory,
+        patch("gitinject.scanner.memory.CrossWorkflowMemory") as memory,
     ):
         result = live_validator.validate(
             [hypothesis()], context, "wf", "code-review", iterations=1, enable_diagnostics=enabled
@@ -262,7 +262,7 @@ def test_recipe_symlink_collision_cannot_modify_target(tmp_path):
 
 
 def client_with_mock_api():
-    with patch("src.benchmark.utils.gh_client.Github"):
+    with patch("gitinject.utils.gh_client.Github"):
         return GitHubClient("owner/trial", token="test")
 
 
@@ -312,7 +312,7 @@ def test_cleanup_uses_saved_identity_and_refuses_replacements():
 def test_failed_cli_command_is_not_empty_success():
     client = client_with_mock_api()
     with patch(
-        "src.benchmark.utils.gh_client.subprocess.run",
+        "gitinject.utils.gh_client.subprocess.run",
         return_value=SimpleNamespace(returncode=1, stdout="", stderr="denied"),
     ):
         with pytest.raises(RuntimeError, match="denied"):
@@ -337,7 +337,7 @@ def test_partial_attacker_fork_setup_retains_cleanup_ownership(monkeypatch):
     fork.fork_repo.return_value = (True, "")
     fork.wait_until_ready.side_effect = RuntimeError("readiness timeout")
     fork.delete_owned_repo.return_value = (True, "")
-    with patch("src.benchmark.utils.scenario_resources.GitHubClient", return_value=fork):
+    with patch("gitinject.utils.scenario_resources.GitHubClient", return_value=fork):
         with pytest.raises(RuntimeError, match="readiness"):
             setup_attacker_fork(scenario, MagicMock())
     teardown_attacker_fork(scenario)
@@ -393,9 +393,9 @@ def test_cleanup_operations_are_independent():
 
 
 def test_failed_creation_saves_error_without_scenario_teardown_or_trigger(tmp_path):
-    workflow = tmp_path / "src/benchmark/workflows/wf"
+    workflow = tmp_path / "src/gitinject/workflows/wf"
     workflow.mkdir(parents=True)
-    with patch("src.benchmark.runner.GitHubClient"):
+    with patch("gitinject.runner.GitHubClient"):
         runner = BenchmarkRunner(str(tmp_path), repo_prefix="owner/trial")
     scenario = RecipeScenario(str(tmp_path), hypothesis())
     scenario.teardown_state = MagicMock()
@@ -416,12 +416,12 @@ def test_failed_creation_saves_error_without_scenario_teardown_or_trigger(tmp_pa
 
 
 def test_run_preserves_breach_after_workflow_failure_and_cleanup_error(tmp_path):
-    workflow = tmp_path / "src/benchmark/workflows/wf"
+    workflow = tmp_path / "src/gitinject/workflows/wf"
     workflow.mkdir(parents=True)
     (workflow / "main.yml").write_text(
         "on: issues\njobs:\n  review:\n    steps:\n      - name: Run Codex\n        uses: openai/codex-action@v1\n"
     )
-    with patch("src.benchmark.runner.GitHubClient"):
+    with patch("gitinject.runner.GitHubClient"):
         runner = BenchmarkRunner(str(tmp_path), repo_prefix="owner/trial")
     runner.gh_client.repo_name = runner.repo_name
     runner.gh_client.get_authenticated_user_login.return_value = "owner"
@@ -526,7 +526,7 @@ def test_no_effective_attack_slot_is_rejected_before_generation():
 
 
 def test_optimizer_uses_fresh_normal_runs_and_excludes_evaluation_errors(tmp_path):
-    workflow = tmp_path / "src/benchmark/workflows/wf"
+    workflow = tmp_path / "src/gitinject/workflows/wf"
     workflow.mkdir(parents=True)
     (workflow / "main.yml").write_text(
         "on: issues\njobs:\n  review:\n    steps:\n      - name: Run Codex\n        uses: openai/codex-action@v1\n"
@@ -570,9 +570,9 @@ def test_optimizer_uses_fresh_normal_runs_and_excludes_evaluation_errors(tmp_pat
     attack.generate.return_value = "payload"
     attack.best_payload = None
     with (
-        patch("src.benchmark.runner.load_attack", return_value=attack),
+        patch("gitinject.runner.load_attack", return_value=attack),
         patch(
-            "src.benchmark.runner.BenchmarkRunner",
+            "gitinject.runner.BenchmarkRunner",
             side_effect=make_trial,
         ),
     ):
@@ -595,7 +595,7 @@ def test_optimizer_uses_fresh_normal_runs_and_excludes_evaluation_errors(tmp_pat
 
 def test_offline_provider_errors_are_unscored_and_not_learned(tmp_path, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test")
-    workflow = tmp_path / "src/benchmark/workflows/wf"
+    workflow = tmp_path / "src/gitinject/workflows/wf"
     workflow.mkdir(parents=True)
     runner = BenchmarkRunner.__new__(BenchmarkRunner)
     runner.workspace_dir = str(tmp_path)
@@ -611,7 +611,7 @@ def test_offline_provider_errors_are_unscored_and_not_learned(tmp_path, monkeypa
     model = MagicMock()
     response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="resisted"))])
     model.chat.completions.create.side_effect = [RuntimeError("provider unavailable"), response]
-    with patch("src.benchmark.runner.load_attack", return_value=attack), patch("openai.OpenAI", return_value=model):
+    with patch("gitinject.runner.load_attack", return_value=attack), patch("openai.OpenAI", return_value=model):
         result = runner.offline_optimize("wf", "candidate", "static", 2, victim_model="gpt-4o-mini")
     assert result["asr_curve"] == [None, 0]
     assert result["final_asr"] == 0.0

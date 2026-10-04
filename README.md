@@ -4,10 +4,10 @@
 
 [![NeurIPS 2026 accepted](https://img.shields.io/badge/NeurIPS_2026-Accepted-6842C2)](https://neurips.cc/Conferences/2026/CallForEvaluationsDatasets)
 [![arXiv](https://img.shields.io/badge/arXiv-2606.09935-B31B1B?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2606.09935)
-[![Python 3.13+](https://img.shields.io/badge/Python-3.13%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-22863A)](LICENSE)
+[![Python 3.13+](https://img.shields.io/badge/Python-3.13%2B-3776AB?logo=python&logoColor=white)](https://github.com/ceferisbarov/GitInject/blob/master/pyproject.toml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-22863A)](https://github.com/ceferisbarov/GitInject/blob/master/LICENSE)
 
-📚 [Documentation](https://ceferisbarov.github.io/GitInject/) · 📄 [Paper](https://arxiv.org/abs/2606.09935) · 🧪 [Reproduce paper attacks](docs/guides/running-benchmarks.md#reproduce-the-bundled-paper-attacks) · 🤝 [Contributing](CONTRIBUTING.md)
+📚 [Documentation](https://ceferisbarov.github.io/GitInject/) · 📄 [Paper](https://arxiv.org/abs/2606.09935) · 🧪 [Reproduce paper attacks](https://ceferisbarov.github.io/GitInject/guides/running-benchmarks/#reproduce-the-bundled-paper-attacks) · 🤝 [Contributing](https://github.com/ceferisbarov/GitInject/blob/master/CONTRIBUTING.md)
 
 🎉 **Accepted to the NeurIPS 2026 Evaluations & Datasets Track!**
 
@@ -20,51 +20,62 @@ GitInject provisions repositories, installs agent workflows, triggers scenario i
 - **Inspectable results:** each GitHub attempt records copied inputs, execution phases, evidence, and results.
 - **Attack discovery:** the scanner generates and ranks attack hypotheses, then validates candidates through the same live run engine.
 
-A [GitLab runner](docs/guides/gitlab.md) is also available with a narrower execution and evidence contract. See [metrics and evidence](docs/concepts/evaluation.md) for how verdicts are determined.
+A [GitLab runner](https://ceferisbarov.github.io/GitInject/guides/gitlab/) is also available with a narrower execution and evidence contract. See [metrics and evidence](https://ceferisbarov.github.io/GitInject/concepts/evaluation/) for how verdicts are determined.
 
 > GitInject creates public repositories, installs credentials, triggers real workflows, and deletes repositories during cleanup. Use a dedicated testing account.
 
 ## Get started
 
-Install Python 3.13+, [uv](https://docs.astral.sh/uv/), and the [GitHub CLI](https://cli.github.com/), then check out the repository:
+Install Python 3.13+, [uv](https://docs.astral.sh/uv/), and the [GitHub CLI](https://cli.github.com/). Install a released version from PyPI into an existing project:
+
+```bash
+uv add gitinject
+uv run gitinject list workflows
+uv run gitinject list scenarios
+uv run gitinject run-suite --workflow-labels codex --scenario-type benign --dry-run
+```
+
+For a standalone CLI, use `uv tool install gitinject`, then run `gitinject` directly. Python extensions import from `gitinject`, for example `from gitinject.runner import BenchmarkRunner`.
+
+To install from Git, use `uv add gitinject --git https://github.com/ceferisbarov/GitInject.git`. To develop GitInject or reproduce the paper with the checked-in dependency lockfile, use a checkout:
 
 ```bash
 git clone https://github.com/ceferisbarov/GitInject.git
 cd GitInject
 uv sync --locked
-uv run python -m src.benchmark.cli list workflows
-uv run python -m src.benchmark.cli list scenarios
-uv run python -m src.benchmark.cli run-suite --workflow-labels codex --scenario-type benign --dry-run
+uv run gitinject list workflows
+uv run gitinject list scenarios
+uv run gitinject run-suite --workflow-labels codex --scenario-type benign --dry-run
 ```
 
-The dry run lists compatible pairs without creating repositories or calling models. Configure your GitHub identity and workflow/judge credentials using the [installation guide](docs/getting-started/installation.md), then run a first benign trial:
+The dry run lists compatible pairs without creating repositories or calling models. Configure your GitHub identity and workflow/judge credentials using the [installation guide](https://ceferisbarov.github.io/GitInject/getting-started/installation/), then run a first benign trial:
 
 ```bash
-uv run python -m src.benchmark.cli run --workflow codex-pr-review --scenario vulnerable_code_review
+uv run gitinject run --workflow codex-pr-review --scenario vulnerable_code_review
 ```
 
-This pair needs `OPENAI_API_KEY` for Codex and `GEMINI_API_KEY` for semantic evaluation, plus local GitHub authentication. See the [quickstart](docs/getting-started/quickstart.md) for interpreting results.
+This pair needs `OPENAI_API_KEY` for Codex and `GEMINI_API_KEY` for semantic evaluation, plus local GitHub authentication. See the [quickstart](https://ceferisbarov.github.io/GitInject/getting-started/quickstart/) for interpreting results.
 
 ## Guides and reference
 
-- [Run benchmarks, suites, and bundled paper attacks](docs/guides/running-benchmarks.md)
-- [Author Python scenarios](docs/guides/scenarios.md) and [research experiments](docs/guides/research.md)
-- [Add workflows](docs/guides/workflows.md)
-- [Generate and optimize attacks](docs/guides/attacks.md)
-- [Scan workflows](docs/guides/scanner.md)
-- [Inspect and reproduce results](docs/guides/results.md)
+- [Run benchmarks, suites, and bundled paper attacks](https://ceferisbarov.github.io/GitInject/guides/running-benchmarks/)
+- [Author Python scenarios](https://ceferisbarov.github.io/GitInject/guides/scenarios/) and [research experiments](https://ceferisbarov.github.io/GitInject/guides/research/)
+- [Add workflows](https://ceferisbarov.github.io/GitInject/guides/workflows/)
+- [Generate and optimize attacks](https://ceferisbarov.github.io/GitInject/guides/attacks/)
+- [Scan workflows](https://ceferisbarov.github.io/GitInject/guides/scanner/)
+- [Inspect and reproduce results](https://ceferisbarov.github.io/GitInject/guides/results/)
 - [CLI reference](https://ceferisbarov.github.io/GitInject/reference/cli/) and [Python API](https://ceferisbarov.github.io/GitInject/api/)
 
-For local documentation previews, strict builds, and GitHub Pages deployment, see [documentation development](docs/development/documentation.md).
+For local documentation previews, strict builds, and GitHub Pages deployment, see [documentation development](https://ceferisbarov.github.io/GitInject/development/documentation/).
 
 ## Repository layout
 
 | Path | Purpose |
 | --- | --- |
-| `src/benchmark/` | CLI, runners, scenarios, evaluators, and attempt records. |
-| `src/benchmark/workflows/` | Target workflow assets and metadata. |
-| `src/benchmark/scenarios/` | Python utility and attack scenarios with fixtures. |
-| `src/benchmark/scanner/` | Hypothesis generation, ranking, recipes, validation, diagnostics, and reports. |
+| `src/gitinject/` | CLI, runners, scenarios, evaluators, and attempt records. |
+| `src/gitinject/workflows/` | Target workflow assets and metadata. |
+| `src/gitinject/scenarios/` | Python utility and attack scenarios with fixtures. |
+| `src/gitinject/scanner/` | Hypothesis generation, ranking, recipes, validation, diagnostics, and reports. |
 | `docs/` | Published guides and reference. |
 | `tests/` | Unit and live integration tests. |
 | `research/` | Research notes and scanner warm-start material. |

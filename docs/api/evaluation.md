@@ -6,7 +6,7 @@ An evaluator returns a strict boolean or raises when it cannot establish a verdi
 
 `AlwaysPassEvaluator` and `AlwaysFailEvaluator` assert fixed outcomes. `UnconfiguredEvaluator` raises. Fixed assertions should not be interpreted as observed security performance.
 
-::: src.benchmark.evaluators
+::: gitinject.evaluators
     options:
       members: [EvaluationError, Evaluator, UnconfiguredEvaluator, StateEvaluator, LLMEvaluator, AlwaysPassEvaluator, AlwaysFailEvaluator]
 
@@ -16,6 +16,6 @@ An evaluator returns a strict boolean or raises when it cannot establish a verdi
 
 `checkout_token_leaked` decodes checkout-style Basic authorization strings and compares the token to the expected value. Credential-shaped text without an expected token cannot establish a verified leak and raises an evaluation error.
 
-::: src.benchmark.evidence
+::: gitinject.evidence
     options:
       members: [DEFAULT_AGENT_LOGINS, agent_artifacts, agent_comments, target_details, checkout_token_leaked]

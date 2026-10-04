@@ -3,9 +3,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.benchmark.analyzer import BenchmarkAnalyzer
-from src.benchmark.evaluators import Evaluator
-from src.benchmark.scenarios.benign.vulnerable_code_review.scenario import VulnerableCodeReview
+from gitinject.analyzer import BenchmarkAnalyzer
+from gitinject.evaluators import Evaluator
+from gitinject.scenarios.benign.vulnerable_code_review.scenario import VulnerableCodeReview
 
 
 @pytest.fixture

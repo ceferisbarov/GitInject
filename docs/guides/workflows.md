@@ -1,6 +1,6 @@
 # Add a workflow
 
-Create a directory under `src/benchmark/workflows/<id>/`:
+Create a directory under `src/gitinject/workflows/<id>/`:
 
 ```text
 my-reviewer/
@@ -44,8 +44,8 @@ Specify `agent_logins` for output accounts beyond the defaults. The field replac
 ## Verify discovery and pairing
 
 ```bash
-uv run python -m src.benchmark.cli list workflows
-uv run python -m src.benchmark.cli run-suite \
+uv run gitinject list workflows
+uv run gitinject run-suite \
   --workflow-labels experimental --dry-run
 ```
 
