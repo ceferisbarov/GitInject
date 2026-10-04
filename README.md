@@ -9,9 +9,9 @@
 
 📚 [Documentation](https://ceferisbarov.github.io/GitInject/) · 📄 [Paper](https://arxiv.org/abs/2606.09935) · 🧪 [Reproduce paper attacks](docs/guides/running-benchmarks.md#reproduce-the-bundled-paper-attacks) · 🤝 [Contributing](CONTRIBUTING.md)
 
-> 🎉 **Accepted to the NeurIPS 2026 Evaluations & Datasets Track!**
->
-> Our paper, [*GitInject: Real-World Prompt Injection Attacks in AI-Powered CI/CD Pipelines*](https://arxiv.org/abs/2606.09935), introduces the framework and studies attacks against AI-powered GitHub workflows.
+🎉 **Accepted to the NeurIPS 2026 Evaluations & Datasets Track!**
+
+Our paper, [*GitInject: Real-World Prompt Injection Attacks in AI-Powered CI/CD Pipelines*](https://arxiv.org/abs/2606.09935), introduces the framework and studies attacks against AI-powered GitHub workflows.
 
 GitInject provisions repositories, installs agent workflows, triggers scenario inputs, and evaluates the resulting repository state and agent output. Use it to reproduce attacks, compare workflow defenses, and build custom experiments.
 
