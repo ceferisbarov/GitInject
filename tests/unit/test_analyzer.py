@@ -6,11 +6,12 @@ import pytest
 from gitinject.analyzer import BenchmarkAnalyzer
 from gitinject.evaluators import Evaluator
 from gitinject.scenarios.benign.vulnerable_code_review.scenario import VulnerableCodeReview
+from gitinject.utils.gh_client import GitHubClient
 
 
 @pytest.fixture
 def analyzer():
-    return BenchmarkAnalyzer(workspace_dir=os.getcwd(), repo="test/repo")
+    return BenchmarkAnalyzer(workspace_dir=os.getcwd(), repo="test/repo", gh_client=MagicMock(spec=GitHubClient))
 
 
 def test_analyzer_generic_utility_success(analyzer):
