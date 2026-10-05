@@ -18,7 +18,7 @@ def test_bundled_catalogs_work_without_checkout_or_credentials(tmp_path, monkeyp
         for args, expected in (
             (["list", "workflows"], "codex-pr-review"),
             (["list", "scenarios"], "vulnerable_code_review"),
-            (["run-suite", "--workflow-labels", "codex", "--scenario-type", "benign", "--dry-run"], "codex-pr-review"),
+            (["legacy", "run-suite", "--workflow-labels", "codex", "--scenario-type", "benign", "--dry-run"], "codex-pr-review"),
         ):
             result = CliRunner().invoke(cli, args)
             assert result.exit_code == 0, result.output
