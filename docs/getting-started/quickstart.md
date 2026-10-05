@@ -1,5 +1,7 @@
 # First benchmark
 
+> Use **v0.1.0 for replication of the original paper**. The new GitHub [experiment engine](../guides/experiments.md) uses targets, attack instances, two accounts, and isolated sessions. Original execution commands are under `gitinject legacy`; legacy runners/scanner/GitLab do not meet the new isolation contract.
+
 Complete [installation and configuration](installation.md), then discover the dataset:
 
 ```bash

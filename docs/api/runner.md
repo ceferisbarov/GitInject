@@ -1,5 +1,7 @@
 # Runner and analyzer
 
+> Use **v0.1.0 for replication of the original paper**. The new GitHub [experiment engine](../guides/experiments.md) uses targets, attack instances, two accounts, and isolated sessions. Original execution commands are under `gitinject legacy`; legacy runners/scanner/GitLab do not meet the new isolation contract.
+
 `BenchmarkRunner` resolves local credentials during construction; GitHub identity reads begin in the recorded preflight. Inject `gh_client` and `event_gh_client` for controlled clients. Construction assigns a repository name; use a fresh runner for each independent experiment.
 
 ## Run arguments

@@ -46,7 +46,7 @@ class RunRecord:
             "schema_version": 1,
             "attempt_id": self.attempt_id,
             "timestamp": self.timestamp,
-            "spec": asdict(spec),
+            "spec": spec.to_dict() if hasattr(spec, "to_dict") else asdict(spec),
             "inputs": {},
         }
         try:
