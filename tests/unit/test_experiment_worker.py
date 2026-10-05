@@ -4,7 +4,7 @@ import os
 import pytest
 from test_experiments import FakeGateway, definition
 
-from gitinject.experiments import AttackInstance, ControllerRef, ExperimentSession
+from gitinject.experiments import AttackInstance, ControllerRef, ExperimentSession, ThreatModel
 from gitinject.experiments.worker import check_boundary
 
 
@@ -100,3 +100,33 @@ def test_controller_hash_mismatch_fails_before_provisioning(tmp_path):
     result = trial.run()
     assert result["execution"] == "policy_failure"
     assert not defense.calls
+
+
+def test_real_offline_worker_prepares_before_live_trigger(tmp_path, isolated_runtime):
+    code = """
+assert context["repository"] is None
+assert "responses" not in context
+payload = "initial"
+for revision in range(2):
+    score = int(payload == "selected")
+    session.checkpoint({"revision": revision, "score": score}, payloads={"payload": payload}, simulated=True)
+    payload = "selected"
+session.act({"id": "prepared", "parameters": {"method": "POST", "endpoint": "/repos/${repository}/issues",
+                                             "json": {"body": payload}}})
+"""
+    spec = controller_spec(tmp_path / "offline.py", code)
+    spec = definition(
+        attack=spec.attack,
+        threat_model=ThreatModel(
+            id="offline",
+            adaptation="offline",
+            initial_capabilities=("github", "offline"),
+        ),
+    )
+    attack = FakeGateway("attack", 2)
+    trial = ExperimentSession(spec, tmp_path, defense=FakeGateway("defense", 1), attack=attack)
+    result = trial.run()
+    assert result["execution"] == "completed", result
+    assert attack.calls[-1]["json"]["body"] == "selected"
+    events = (trial.record.directory / "events.jsonl").read_text()
+    assert events.index('"kind": "candidate_frozen"') < events.index('"phase": "provision"')

@@ -22,7 +22,7 @@ def live_prerequisites():
     check_boundary()
 
 
-@pytest.mark.parametrize("fixture", ["benign", "issue-injection", "fork-pr", "adaptive"])
+@pytest.mark.parametrize("fixture", ["benign", "issue-injection", "fork-pr", "adaptive", "offline"])
 def test_live_accounts_and_agent_invocation(fixture, live_prerequisites, tmp_path):
     spec = load_spec(ROOT / f"examples/experiments/{fixture}.json")
     if spec.attack and spec.attack.controller:

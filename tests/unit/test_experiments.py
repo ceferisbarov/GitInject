@@ -677,3 +677,288 @@ def test_cli_separates_all_legacy_execution_entry_points():
     assert set(cli.commands) == {"experiment", "legacy", "list"}
     assert {"run", "run-suite", "scan", "optimize", "preflight", "cleanup", "report"} <= set(cli.commands["legacy"].commands)
     assert "experiments" in cli.commands["list"].commands
+
+
+def test_replay_waits_for_fresh_feedback(tmp_path):
+    class ReadinessGateway(FakeGateway):
+        remaining_polls = 0
+        marker = "old"
+        reads = 0
+
+        def rest(self, parameters):
+            if parameters["endpoint"].endswith("/ready"):
+                self.reads += 1
+                status = "pending" if self.remaining_polls else "completed"
+                self.remaining_polls = max(0, self.remaining_polls - 1)
+                return {"status": 200, "body": {"status": status, "marker": self.marker}}
+            return super().rest(parameters)
+
+    defense, attack = FakeGateway("defense", 1), ReadinessGateway("attack", 2)
+    actions = (
+        Action(
+            id="ready", parameters={"endpoint": "/repos/${repository}/ready"}, wait_for={"timeout": 1, "poll_seconds": 0.001}
+        ),
+        Action(
+            id="after",
+            depends_on=("ready",),
+            parameters={
+                "method": "POST",
+                "endpoint": "/repos/${repository}/issues",
+                "json": {"body": "${response.ready.body.marker}"},
+            },
+        ),
+    )
+    trial = session(tmp_path, (defense, attack), attack=AttackInstance(id="waiting", actions=actions))
+    assert trial.run()["execution"] == "completed"
+    attack.remaining_polls, attack.marker = 2, "fresh"
+    result = replay_trace(trial.record.directory, tmp_path, defense=defense, attack=attack)
+    assert result["execution"] == "completed", result
+    assert attack.reads == 4  # one original poll, three fresh polls
+    assert attack.calls[-1]["json"]["body"] == "fresh"
+
+
+def test_direct_wait_records_logical_action(tmp_path, gateways):
+    trial = session(tmp_path, gateways)
+    trial.initialize()
+    trial.wait(Action(id="direct", parameters={"endpoint": "/repos/${repository}"}))
+    trial.finish()
+    events = inspect_attempt(trial.record.directory, workspace=tmp_path)["events"]
+    assert any(e["kind"] == "wait_complete" and e["action"]["id"] == "direct" for e in events)
+
+
+def test_replay_preserves_payloads_and_rejects_ambiguous_identifiers():
+    from gitinject.experiments.replay import _mapping, remap
+
+    mapping = {
+        ("route", "/repos/old/repo/issues/1"): "/repos/new/repo/issues/2",
+        ("route", "/repos/old/repo/actions/runs/1"): "/repos/new/repo/actions/runs/7",
+    }
+    _mapping({"id": 1, "sha": "abc"}, {"id": 2, "sha": "def"}, mapping)
+    _mapping({"id": 1}, {"id": 7}, mapping)
+    assert remap({"endpoint": "/repos/old/repo/issues/1/comments"}, mapping)["endpoint"] == (
+        "/repos/new/repo/issues/2/comments"
+    )
+    payload = {"body": {"id": 1, "sha": "abc"}, "content": "Write abc", "title": "abc"}
+    assert remap(payload, mapping) == payload
+    with pytest.raises(ValueError, match="Ambiguous"):
+        remap({"variables": {"id": 1}}, mapping)
+    with pytest.raises(ValueError, match="Unbound"):
+        remap({"endpoint": "/repos/old/repo/pulls/1"}, mapping)
+
+
+def test_replay_binds_literal_issue_route_without_changing_payload(tmp_path, gateways):
+    trial = session(tmp_path, gateways)
+    trial.initialize()
+    first = trial.act(
+        Action(
+            id="created",
+            parameters={
+                "method": "POST",
+                "endpoint": "/repos/${repository}/issues",
+                "json": {"body": "first"},
+            },
+        )
+    )
+    trial.act(
+        Action(
+            id="comment",
+            depends_on=("created",),
+            parameters={
+                "method": "POST",
+                "endpoint": f"/repos/${{repository}}/issues/{first['body']['number']}/comments",
+                "json": {"body": f"Keep original issue {first['body']['number']} in this payload"},
+            },
+        )
+    )
+    trial.finish()
+    result = replay_trace(trial.record.directory, tmp_path, defense=gateways[0], attack=gateways[1])
+    assert result["execution"] == "completed", result
+    comment = gateways[1].calls[-1]
+    assert comment["endpoint"].endswith("/issues/42/comments")
+    assert comment["json"]["body"] == "Keep original issue 41 in this payload"
+
+
+def test_offline_candidate_is_frozen_before_any_provisioning(tmp_path, gateways, monkeypatch):
+    from gitinject.experiments import ControllerRef
+
+    path = tmp_path / "offline.py"
+    path.write_text("# isolated controller\n")
+    attack = AttackInstance(
+        id="offline",
+        controller=ControllerRef(
+            path=str(path),
+            sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+        ),
+    )
+    monkeypatch.setattr("gitinject.experiments.worker.check_boundary", lambda: None)
+
+    def prepare(trial):
+        assert trial.repository is None and not trial._initialized
+        assert not gateways[0].calls and not gateways[1].calls
+        assert "responses" not in trial.observations()
+        trial.checkpoint({"score": 0}, payloads={"candidate": "first"}, simulated=True)
+        trial.checkpoint({"score": 1}, payloads={"candidate": "selected"}, simulated=True)
+        assert trial.act(
+            Action(
+                id="selected",
+                parameters={
+                    "method": "POST",
+                    "endpoint": "/repos/${repository}/issues",
+                    "json": {"body": "selected"},
+                },
+            )
+        ) == {"prepared": True}
+        with pytest.raises(ValueError, match="cannot wait"):
+            trial.wait(Action(id="forbidden", parameters={"endpoint": "/user"}))
+
+    monkeypatch.setattr("gitinject.experiments.worker.run_controller", prepare)
+    trial = session(
+        tmp_path,
+        gateways,
+        attack=attack,
+        threat_model=ThreatModel(
+            id="offline",
+            adaptation="offline",
+            initial_capabilities=("github", "offline"),
+        ),
+    )
+    result = trial.run()
+    assert result["execution"] == "completed", result
+    assert gateways[1].calls[-1]["json"]["body"] == "selected"
+    inspection = inspect_attempt(trial.record.directory, workspace=tmp_path)
+    kinds = [e["kind"] for e in inspection["events"]]
+    assert kinds.index("candidate_frozen") < next(
+        i for i, e in enumerate(inspection["events"]) if e["kind"] == "phase" and e["phase"] == "provision"
+    )
+    candidate = json.loads((trial.record.directory / "artifacts/prepared-candidate.json").read_text())
+    assert candidate["actions"][0]["parameters"]["json"]["body"] == "selected"
+    evidence = json.loads((trial.record.directory / "artifacts/evidence.json").read_text())
+    assert "score" not in json.dumps(evidence)
+
+
+def test_duplicate_workflow_runs_cannot_cover_another_action(tmp_path, gateways):
+    from datetime import datetime, timezone
+
+    trigger = Action(
+        id="task",
+        subject={"event": "issues"},
+        parameters={
+            "method": "POST",
+            "endpoint": "/repos/${repository}/issues",
+            "json": {"body": "task"},
+        },
+    )
+    trial = session(
+        tmp_path,
+        gateways,
+        task_trigger=trigger,
+        execution={
+            "invocation": {
+                "workflow_path": ".github/workflows/agent.yml",
+                "job_name": "agent",
+                "step_name": "Run agent",
+                "subject_run_name_prefix": "Experiment",
+            }
+        },
+    )
+    trial.initialize()
+    trial.act(
+        Action(
+            id="attack",
+            subject={"event": "issues"},
+            parameters={
+                "method": "POST",
+                "endpoint": "/repos/${repository}/issues",
+                "json": {"body": "attack"},
+            },
+        )
+    )
+    task_number = trial._responses["task"]["body"]["number"]
+    # Both fake accounts start at 40, so explicitly use a different attack subject.
+    trial._responses["attack"]["body"]["number"] = task_number + 1
+    run = {
+        "id": 1,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "status": "completed",
+        "path": ".github/workflows/agent.yml",
+        "event": "issues",
+        "head_sha": "baseline",
+        "display_title": f"Experiment issues {task_number}",
+    }
+    runs = [run, {**run, "id": 2}]
+
+    def evidence_request(parameters):
+        if parameters["endpoint"].endswith("/actions/runs"):
+            return {"status": 200, "body": {"workflow_runs": runs}}
+        return {
+            "status": 200,
+            "body": {
+                "jobs": [
+                    {
+                        "name": "agent",
+                        "steps": [
+                            {"name": "Run agent", "conclusion": "success"},
+                        ],
+                    }
+                ]
+            },
+        }
+
+    gateways[0].rest = evidence_request
+    evidence = {}
+    assert trial._collect_invocation(evidence) is None
+    assert all(r["action_ids"] == ["task"] for r in evidence["invocation_receipts"])
+    runs.append({**run, "id": 3, "display_title": f"Experiment issues {task_number + 1}"})
+    assert trial._collect_invocation({}) is True
+    # Without an explicit issue subject label, successful steps leave causality unknown.
+    runs[:] = [{**r, "display_title": "unrelated run"} for r in runs]
+    assert trial._collect_invocation({}) is None
+    trial.cancel()
+    trial.finish()
+
+
+def test_replay_stops_when_previously_satisfied_wait_times_out(tmp_path, gateways):
+    wait = Action(
+        id="ready", parameters={"endpoint": "/repos/${repository}/ready"}, wait_for={"timeout": 0.02, "poll_seconds": 0.001}
+    )
+    mutation = Action(
+        id="after",
+        depends_on=("ready",),
+        parameters={
+            "method": "POST",
+            "endpoint": "/repos/${repository}/issues",
+            "json": {"body": "after"},
+        },
+    )
+    trial = session(tmp_path, gateways, attack=AttackInstance(id="waiting", actions=(wait, mutation)))
+    assert trial.run()["execution"] == "completed"
+    original = gateways[1].rest
+
+    def pending(parameters):
+        if parameters["endpoint"].endswith("/ready"):
+            return {"status": 200, "body": {"status": "pending"}}
+        return original(parameters)
+
+    gateways[1].rest = pending
+    calls = len(gateways[1].calls)
+    result = replay_trace(trial.record.directory, tmp_path, defense=gateways[0], attack=gateways[1])
+    assert result["execution"] == "policy_failure"
+    assert "wait condition" in result["execution_error"]
+    assert len(gateways[1].calls) == calls
+
+
+def test_graphql_replay_requires_bindings_for_literal_node_ids():
+    from gitinject.experiments.replay import remap
+
+    mapping = {("str", "OLD_NODE_ID"): "NEW_NODE_ID"}
+    assert remap({"variables": {"repositoryId": "OLD_NODE_ID"}}, mapping) == {
+        "variables": {"repositoryId": "NEW_NODE_ID"},
+    }
+    with pytest.raises(ValueError, match="symbolic variable"):
+        remap({"query": 'query { node(id: "OLD_NODE_ID") { id } }'}, mapping)
+    assert remap(
+        {"query": "query($id:ID!){node(id:$id){id}}", "variables": {"id": "${response.created.body.id}"}}, mapping
+    ) == {
+        "query": "query($id:ID!){node(id:$id){id}}",
+        "variables": {"id": "${response.created.body.id}"},
+    }

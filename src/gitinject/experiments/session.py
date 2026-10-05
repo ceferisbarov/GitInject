@@ -8,7 +8,6 @@ import re
 import sys
 import time
 import uuid
-from collections import Counter
 from datetime import datetime, timezone
 from importlib.metadata import distributions
 from pathlib import Path
@@ -112,6 +111,8 @@ class ExperimentSession:
         self._cancelled = False
         self._closed = False
         self._initialized = False
+        self._preparing = False
+        self._prepared_actions = []
         self.action_count = 0
         self.model_calls = 0
         self.model_cost = 0
@@ -238,6 +239,7 @@ class ExperimentSession:
                         f"Missing credential reference: {change.credential.environment}",
                     )
             self._verify_controller()
+            self._prepare_offline()
             self.record.event("phase", phase="resolve-source")
             self._resolve_source()
             self.record.manifest["actors"] = self.identities
@@ -293,6 +295,32 @@ class ExperimentSession:
         from .worker import check_boundary
 
         check_boundary()
+
+    def _prepare_offline(self):
+        if not self.spec.attack or self.spec.threat_model.adaptation != "offline":
+            return
+        self.record.event("phase", phase="prepare-offline")
+        self._preparing = True
+        try:
+            if self.spec.attack.controller:
+                from .worker import run_controller
+
+                run_controller(self)
+            else:
+                for action in self.spec.attack.actions:
+                    self.act(action)
+        finally:
+            self._preparing = False
+        # Immutable Actions retain symbolic bindings until the fresh trial exists.
+        self._prepared_actions = tuple(self._prepared_actions)
+        candidate = {
+            "actions": [a.to_dict() for a in self._prepared_actions],
+            "state": self._state,
+            "evaluation_revision": self.spec.evaluation.revision,
+        }
+        self.record.artifact("prepared-candidate.json", candidate)
+        self.record.manifest["prepared_candidate_revision"] = hashlib.sha256(canonical(candidate).encode()).hexdigest()
+        self.record.event("candidate_frozen", revision=self.record.manifest["prepared_candidate_revision"])
 
     def _resolve_source(self):
         target = self.spec.target
@@ -465,6 +493,19 @@ class ExperimentSession:
         return Action.from_dict(self._substitute(action.to_dict(), private=private))
 
     def act(self, action):
+        if self._preparing:
+            self._check()
+            if "github" not in self.spec.threat_model.initial_capabilities:
+                raise PolicyError("Threat model does not grant GitHub actions")
+            action = action if isinstance(action, Action) else Action.from_dict(action)
+            require(not action.wait_for, "Offline preparation cannot wait for live observations")
+            ids = {self.spec.task_trigger.id} | {a.id for a in self._prepared_actions}
+            require(action.id not in ids, "Prepared action ID already used")
+            require(set(action.depends_on) <= ids, "Missing prepared action dependencies")
+            require(len(self._prepared_actions) + 1 < self.spec.budgets.actions, "Prepared actions exceed action budget")
+            self._prepared_actions.append(action)
+            self.record.event("action_prepared", action=action.to_dict())
+            return {"prepared": True}
         require(self.spec.attack is not None and self._initialized, "Attack session is not initialized")
         if "github" not in self.spec.threat_model.initial_capabilities:
             raise PolicyError("Threat model does not grant GitHub actions")
@@ -473,11 +514,7 @@ class ExperimentSession:
             data = action.to_dict()
             options = data.pop("wait_for")
             request = Action.from_dict(data)
-            response = self.wait(request, **options)
-            self._responses[action.id] = response
-            self._response_roles[action.id] = "attack"
-            self.record.event("wait_complete", actor="attack", action=action.to_dict(), response=response)
-            return response
+            return self.wait(request, **options)
         response = self._perform(action, "attack")
         return response if "github" in self.spec.threat_model.observations else {"recorded": True}
 
@@ -578,6 +615,7 @@ class ExperimentSession:
             time.sleep(min(0.5, max(0, deadline - self.clock())))
 
     def wait(self, request, *, until_path="body.status", expected="completed", timeout=60, poll_seconds=2):
+        require(not self._preparing, "Offline preparation cannot wait for live observations")
         require("github" in self.spec.threat_model.observations, "GitHub observations not permitted")
         request = request if isinstance(request, Action) else Action.from_dict(request)
         require(
@@ -585,6 +623,21 @@ class ExperimentSession:
             "Wait requests must be read-only",
         )
         require(timeout > 0 and poll_seconds > 0, "Invalid wait duration")
+        require(request.id not in self._responses, "Wait action ID already used")
+        logical = request.to_dict()
+        logical["wait_for"] = {
+            "until_path": until_path,
+            "expected": expected,
+            "timeout": timeout,
+            "poll_seconds": poll_seconds,
+        }
+
+        def complete(response):
+            self._responses[request.id] = response
+            self._response_roles[request.id] = "attack"
+            self.record.event("wait_complete", actor="attack", action=logical, response=response)
+            return response
+
         deadline = min(self.deadline, self.clock() + timeout)
         last = None
         counter = 0
@@ -596,10 +649,10 @@ class ExperimentSession:
             counter += 1
             last = self.act(Action.from_dict(data))
             if lookup(last, until_path) == expected:
-                return last
+                return complete(last)
             self._pause(min(poll_seconds, max(0, deadline - self.clock())))
         self._check()
-        return {"timed_out": True, "last_response": last}
+        return complete({"timed_out": True, "last_response": last})
 
     def checkpoint(self, state, *, model_calls=0, model_cost=0, payloads=None, simulated=False):
         self._check()
@@ -633,6 +686,7 @@ class ExperimentSession:
         self.record.event("authority_escalation", evidence=evidence, usage="record-only", actor="attack")
 
     def use_acquired_authority(self, response_path):
+        require(not self._preparing, "Offline preparation cannot acquire live authority")
         self._check(action=True)
         if self.spec.threat_model.acquired_authority != "observed-machine-account":
             raise PolicyError("Threat model does not permit using acquired authority")
@@ -664,7 +718,10 @@ class ExperimentSession:
         config = self._substitute(plain(self.spec.execution.get("invocation")))
         if not config:
             return None
-        require(set(config) <= {"workflow_path", "job_name", "step_name", "actor_login"}, "Invalid invocation configuration")
+        require(
+            set(config) <= {"workflow_path", "job_name", "step_name", "actor_login", "subject_run_name_prefix"},
+            "Invalid invocation configuration",
+        )
         require(
             all(config.get(k) for k in ("workflow_path", "job_name", "step_name")),
             "Invocation requires workflow, job and step",
@@ -673,12 +730,12 @@ class ExperimentSession:
         evidence["workflow_runs"] = runs
         if runs["status"] != 200:
             return None
-        expected_events = Counter(
-            subject.get("event")
+        expected_actions = {
+            action_id
             for action_id, subject in self._subjects.items()
-            if subject.get("event") and 200 <= self._responses[action_id].get("status", 0) < 300
-        )
-        verified_events = Counter()
+            if subject.get("event") and 200 <= (self._responses[action_id].get("status") or 0) < 300
+        }
+        verified_actions = set()
         verified = False
         pending = False
         receipts = []
@@ -697,14 +754,31 @@ class ExperimentSession:
             jobs = self._defense.rest({"endpoint": f"/repos/{self.repository}/actions/runs/{run['id']}/jobs"})
             associated = []
             for action_id, response in self._responses.items():
+                declared = self._subjects.get(action_id, {})
+                if declared.get("event") != run.get("event"):
+                    continue
                 subject = response.get("body", {})
                 if isinstance(subject, dict):
-                    if subject.get("head", {}).get("sha") == run.get("head_sha"):
+                    if run.get("event") in {"push", "pull_request", "pull_request_target"} and (
+                        subject.get("head", {}).get("sha") and subject["head"]["sha"] == run.get("head_sha")
+                    ):
                         associated.append(action_id)
-                    number = subject.get("number")
-                    if number and any(pr.get("number") == number for pr in run.get("pull_requests", [])):
+                    number = declared.get("number") or subject.get("number")
+                    if (
+                        run.get("event") in {"pull_request", "pull_request_target"}
+                        and number
+                        and any(pr.get("number") == number for pr in run.get("pull_requests", []))
+                    ):
                         associated.append(action_id)
-                if response.get("commit_sha") == run.get("head_sha"):
+                    prefix = config.get("subject_run_name_prefix")
+                    label = subject.get("id") if run.get("event") == "issue_comment" else number
+                    if prefix and label and run.get("display_title") == f"{prefix} {run.get('event')} {label}":
+                        associated.append(action_id)
+                if (
+                    run.get("event") == "push"
+                    and response.get("commit_sha")
+                    and response["commit_sha"] == run.get("head_sha")
+                ):
                     associated.append(action_id)
             invoked = False
             if jobs["status"] == 200:
@@ -727,10 +801,11 @@ class ExperimentSession:
             receipts.append(receipt)
             self.record.event("workflow_receipt", **receipt)
             verified |= invoked
-            if invoked:
-                verified_events[run.get("event")] += 1
+            # A run matching several actions cannot prove which one caused it.
+            if invoked and len(set(associated)) == 1:
+                verified_actions.update(associated)
         evidence["invocation_receipts"] = receipts
-        complete = all(verified_events[event] >= count for event, count in expected_events.items())
+        complete = bool(expected_actions) and expected_actions <= verified_actions
         return True if verified and complete and not pending else None
 
     def finish(self):
@@ -830,7 +905,10 @@ class ExperimentSession:
         try:
             self.initialize()
             if self.spec.attack:
-                if self.spec.attack.controller:
+                if self.spec.threat_model.adaptation == "offline":
+                    for action in self._prepared_actions:
+                        self.act(action)
+                elif self.spec.attack.controller:
                     from .worker import run_controller
 
                     run_controller(self)

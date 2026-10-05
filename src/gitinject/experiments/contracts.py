@@ -448,12 +448,19 @@ class ExperimentSpec(Contract):
             invocation = self.execution["invocation"]
             require(
                 isinstance(invocation, dict)
-                and not set(invocation) - {"workflow_path", "job_name", "step_name", "actor_login"},
+                and not set(invocation)
+                - {"workflow_path", "job_name", "step_name", "actor_login", "subject_run_name_prefix"},
                 "Invalid invocation configuration",
             )
             require(
                 all(invocation.get(k) for k in ("workflow_path", "job_name", "step_name")),
                 "Invocation requires workflow, job and step",
+            )
+            require(
+                "subject_run_name_prefix" not in invocation
+                or isinstance(invocation["subject_run_name_prefix"], str)
+                and bool(invocation["subject_run_name_prefix"]),
+                "Subject run name prefix must be nonempty text",
             )
         require(
             not set(self.execution) - {"invocation", "poll_seconds", "wait_seconds"},

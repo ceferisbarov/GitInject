@@ -55,7 +55,7 @@ jobs:
           cd "$RUNNER_TEMP"
           "$UV_TOOL_BIN_DIR/gitinject" list workflows
           "$UV_TOOL_BIN_DIR/gitinject" list scenarios
-          "$UV_TOOL_BIN_DIR/gitinject" run-suite --workflow-labels codex --scenario-type benign --dry-run
+          "$UV_TOOL_BIN_DIR/gitinject" legacy run-suite --workflow-labels codex --scenario-type benign --dry-run
       - name: Upload release distributions
         uses: actions/upload-artifact@v4
         with:
