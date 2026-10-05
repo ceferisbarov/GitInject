@@ -213,6 +213,20 @@
           "schema_version": 1,
           "environment": "OPENAI_API_KEY"
         }
+      },
+      {
+        "schema_version": 1,
+        "id": "fork-contributor-approval-policy",
+        "reason": "The declared attack actor opens the injection pull request from a fork; the declared policy is the loosest GitHub allows, and runs by users new to GitHub with no merged history still require write-access approval of the pending run",
+        "kind": "rest",
+        "configuration": {
+          "method": "PUT",
+          "endpoint": "/repos/${repository}/actions/permissions/fork-pr-contributor-approval",
+          "json": {
+            "approval_policy": "first_time_contributors_new_to_github"
+          }
+        },
+        "credential": null
       }
     ],
     "reproduction_gaps": []
