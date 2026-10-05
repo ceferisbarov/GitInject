@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -55,6 +56,40 @@ def test_runners_find_installed_scenarios_and_write_to_workspace(tmp_path):
         assert "examples/tutorial/flaskr/db_utils.py" in scenario.get_required_files()
     record = RunRecord(str(tmp_path), RunSpec(workflow="codex-pr-review", scenario="vulnerable_code_review"))
     assert record.directory.parent == tmp_path / "runs"
+
+
+def test_write_json_retries_transient_replace_locks(tmp_path):
+    from gitinject.run_record import write_json
+
+    target = tmp_path / "manifest.json"
+    target.write_text("old", encoding="utf-8")
+    real_replace = Path.replace
+    attempts = {"count": 0}
+
+    def flaky_replace(self, other):
+        attempts["count"] += 1
+        if attempts["count"] < 3:
+            raise PermissionError(5, "Access is denied")
+        return real_replace(self, other)
+
+    with patch.object(Path, "replace", flaky_replace), patch("gitinject.run_record.os.name", "nt"):
+        write_json(target, {"ok": True})
+
+    assert attempts["count"] == 3
+    assert json.loads(target.read_text(encoding="utf-8")) == {"ok": True}
+
+
+def test_write_json_propagates_replace_locks_off_windows(tmp_path):
+    from gitinject.run_record import write_json
+
+    target = tmp_path / "manifest.json"
+
+    def locked_replace(self, other):
+        raise PermissionError(5, "Access is denied")
+
+    with patch.object(Path, "replace", locked_replace), patch("gitinject.run_record.os.name", "posix"):
+        with pytest.raises(PermissionError):
+            write_json(target, {"ok": True})
 
 
 def test_prompt_extraction_and_research_notes_work_outside_checkout(tmp_path, monkeypatch):
