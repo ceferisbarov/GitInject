@@ -20,7 +20,8 @@ notebooks/
 runs/
 reports/
 actions/
-GEMINI.md
+# Local agent config only; scenario fixtures under src/ must stay trackable
+/GEMINI.md
 attacks/*
 .env
 
