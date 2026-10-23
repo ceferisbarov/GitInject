@@ -1,5 +1,7 @@
 # Scan a workflow
 
+> Use **v0.1.0 for replication of the original paper**. The new GitHub [experiment engine](experiments.md) uses targets, attack instances, two accounts, and isolated sessions. Original execution commands are under `gitinject legacy`; legacy runners/scanner/GitLab do not meet the new isolation contract.
+
 The scanner extracts workflow context, generates structured attack hypotheses, ranks them, validates selected candidates through the live GitHub runner, and writes Markdown/JSON reports.
 
 ## Generate without live runs

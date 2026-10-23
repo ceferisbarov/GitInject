@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import subprocess
+import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -33,6 +34,14 @@ def write_json(path: Path, value) -> None:
         json.dump(value, handle, indent=2, allow_nan=False)
         handle.flush()
         os.fsync(handle.fileno())
+    for attempt in range(10):
+        try:
+            temporary.replace(path)
+            return
+        except PermissionError:
+            if os.name != "nt":
+                raise
+            time.sleep(0.05 * (attempt + 1))
     temporary.replace(path)
 
 
@@ -46,7 +55,7 @@ class RunRecord:
             "schema_version": 1,
             "attempt_id": self.attempt_id,
             "timestamp": self.timestamp,
-            "spec": asdict(spec),
+            "spec": spec.to_dict() if hasattr(spec, "to_dict") else asdict(spec),
             "inputs": {},
         }
         try:

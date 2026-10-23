@@ -87,7 +87,8 @@ nav:
   - Guides:
       - Run benchmarks and suites: guides/running-benchmarks.md
       - Author Python scenarios: guides/scenarios.md
-      - Research experiments: guides/research.md
+      - Experiment sessions: guides/experiments.md
+      - Legacy research experiments: guides/research.md
       - Add a workflow: guides/workflows.md
       - Generate and optimize attacks: guides/attacks.md
       - Scan a workflow: guides/scanner.md

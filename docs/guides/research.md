@@ -1,5 +1,7 @@
 # Research experiments
 
+> Use **v0.1.0 for replication of the original paper**. The new GitHub [experiment engine](experiments.md) uses targets, attack instances, two accounts, and isolated sessions. Original execution commands are under `gitinject legacy`; legacy runners/scanner/GitLab do not meet the new isolation contract.
+
 Use Python scenarios when an experiment needs arbitrary API calls, multiple stages, or a custom endpoint. `RunContext` supplies actors, parameters, seeded randomness, local artifacts, and repository ownership tracking.
 
 ## Explicit actors

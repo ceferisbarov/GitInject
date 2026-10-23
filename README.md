@@ -14,43 +14,36 @@
 
 Our paper, [*GitInject: Real-World Prompt Injection Attacks in AI-Powered CI/CD Pipelines*](https://arxiv.org/abs/2606.09935), introduces the framework and studies attacks against AI-powered GitHub workflows.
 
-GitInject provisions repositories, installs agent workflows, triggers scenario inputs, and evaluates the resulting repository state and agent output. Use it to reproduce attacks, compare workflow defenses, and build custom experiments.
+**Use v0.1.0 for replication of the original paper.** The current experiment API replaces workflow/scenario pairs with explicit targets, attack instances, threat models, privileged provisioning, and fixed evaluation contracts. Original commands now live under `gitinject legacy`; that engine and its scanner do not provide the new controller-isolation guarantees. No GitLab adapter yet meets the new contracts.
 
-- **Live workflow evaluation:** run utility tasks and prompt injection scenarios in real GitHub Actions workflows.
-- **Independent measurements:** track task completion, security breaches, and verified agent invocation. Verdicts can be `true`, `false`, or unknown; execution and evaluation errors are reported separately. A security breach means the attack succeeded.
-- **Inspectable results:** each GitHub attempt records copied inputs, execution phases, evidence, and results.
-- **Attack discovery:** the scanner generates and ranks attack hypotheses, then validates candidates through the same live run engine.
-
-A [GitLab runner](https://ceferisbarov.github.io/GitInject/guides/gitlab/) is also available with a narrower execution and evidence contract. See [metrics and evidence](https://ceferisbarov.github.io/GitInject/concepts/evaluation/) for how verdicts are determined.
-
-> GitInject creates public repositories, installs credentials, triggers real workflows, and deletes repositories during cleanup. Use a dedicated testing account.
+GitInject runs fresh trials using two dedicated GitHub machine accounts: defense provisions the target, while attack interacts through its own credentials and GitHub permissions. Static, offline, and online adaptive controllers use a reusable session API. Each trial records actions, observations, workflow invocation, independent utility/security results, and reproducible evidence.
 
 ## Get started
 
-Install Python 3.13+, [uv](https://docs.astral.sh/uv/), and the [GitHub CLI](https://cli.github.com/). Install GitInject from [PyPI](https://pypi.org/project/gitinject/) as a standalone CLI:
+Install Python 3.13+, [uv](https://docs.astral.sh/uv/), and the [GitHub CLI](https://cli.github.com/), then work from this checkout:
 
 ```bash
-uv tool install gitinject
-gitinject list workflows
-gitinject list scenarios
-gitinject run-suite --workflow-labels codex --scenario-type benign --dry-run
+uv sync --locked
+uv run gitinject experiment list examples/experiments
+uv run gitinject experiment dry-run examples/experiments/issue-injection.json
 ```
 
-The workflows, scenarios, and fixtures are bundled, so no checkout is needed. Run commands from your experiment directory; evidence is saved to `runs/` and reports to `reports/`. If `gitinject` is not found after installation, run `uv tool update-shell` and restart your shell.
-
-The dry run lists compatible pairs without creating repositories or calling models. Configure your GitHub identity and workflow/judge credentials using the [installation guide](https://ceferisbarov.github.io/GitInject/getting-started/installation/), then run a first benign trial:
+Configure `GITHUB_TOKEN` for defense, `ATTACKER_GITHUB_TOKEN` for a distinct attack account, and `OPENAI_API_KEY` for the example agent. All resources accessible to these dedicated credentials are in the experiment scope. Attack credentials never fall back to defense. Adaptive controllers additionally require Linux x86_64 and working Bubblewrap isolation.
 
 ```bash
-gitinject run --workflow codex-pr-review --scenario vulnerable_code_review
+uv run gitinject experiment run examples/experiments/benign.json
+uv run gitinject experiment run examples/experiments/adaptive.json
+uv run gitinject experiment replay runs/ATTEMPT --mode inspect
 ```
 
-This pair needs `OPENAI_API_KEY` for Codex and `GEMINI_API_KEY` for semantic evaluation, plus local GitHub authentication. See the [quickstart](https://ceferisbarov.github.io/GitInject/getting-started/quickstart/) for interpreting results.
+These commands create public repositories, run real workflows, and clean up attributed repository identities. Planning and dry runs do not mutate GitHub or call models. Evidence is saved to `runs/`. See the [experiment guide](docs/guides/experiments.md) for account scope, worker guarantees, result meanings, transport coverage, replay limits, and examples.
 
-For the Python API, use `uv add gitinject` in your project and import from `gitinject`, for example `from gitinject.runner import BenchmarkRunner`. For development or paper reproduction with the checked-in dependency lockfile, see [checkout installation](https://ceferisbarov.github.io/GitInject/getting-started/installation/#develop-or-reproduce-from-a-checkout).
+The Python API is `from gitinject.experiments import ExperimentSession, ExperimentSpec`. Generated attack code uses the isolated worker protocol; the host Python session API is for a trusted research orchestrator.
 
 ## Guides and reference
 
-- [Run benchmarks, suites, and bundled paper attacks](https://ceferisbarov.github.io/GitInject/guides/running-benchmarks/)
+- [Targets, attacks, adaptive sessions, and replay](docs/guides/experiments.md)
+- [v0.1.0 benchmarks, suites, and bundled paper attacks](https://ceferisbarov.github.io/GitInject/guides/running-benchmarks/)
 - [Author Python scenarios](https://ceferisbarov.github.io/GitInject/guides/scenarios/) and [research experiments](https://ceferisbarov.github.io/GitInject/guides/research/)
 - [Add workflows](https://ceferisbarov.github.io/GitInject/guides/workflows/)
 - [Generate and optimize attacks](https://ceferisbarov.github.io/GitInject/guides/attacks/)
@@ -64,7 +57,9 @@ For local documentation previews, strict builds, and GitHub Pages deployment, se
 
 | Path | Purpose |
 | --- | --- |
-| `src/gitinject/` | CLI, runners, scenarios, evaluators, and attempt records. |
+| `src/gitinject/experiments/` | Versioned contracts, actor gateway, isolated worker, sessions, evaluation, and replay. |
+| `examples/experiments/` | New benign, issue, fork-PR, online, and offline experiment fixtures. |
+| `src/gitinject/` | CLI, legacy runners, evaluators, and shared attempt records. |
 | `src/gitinject/workflows/` | Target workflow assets and metadata. |
 | `src/gitinject/scenarios/` | Python utility and attack scenarios with fixtures. |
 | `src/gitinject/scanner/` | Hypothesis generation, ranking, recipes, validation, diagnostics, and reports. |

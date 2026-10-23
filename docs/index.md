@@ -1,5 +1,7 @@
 # GitInject
 
+> Use **v0.1.0 for replication of the original paper**. The new GitHub [experiment engine](guides/experiments.md) uses targets, attack instances, two accounts, and isolated sessions. Original execution commands are under `gitinject legacy`; legacy runners/scanner/GitLab do not meet the new isolation contract.
+
 **Evaluate prompt injection in real AI-powered CI/CD workflows.**
 
 GitInject provisions repositories, installs an agent workflow, creates a scenario's input, and observes the resulting workflow run and repository state. It measures whether the agent completes its task, whether the attack succeeds, and whether an agent invocation can be verified.

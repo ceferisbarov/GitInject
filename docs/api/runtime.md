@@ -1,5 +1,7 @@
 # Runtime context and records
 
+> Use **v0.1.0 for replication of the original paper**. The new GitHub [experiment engine](../guides/experiments.md) uses targets, attack instances, two accounts, and isolated sessions. Original execution commands are under `gitinject legacy`; legacy runners/scanner/GitLab do not meet the new isolation contract.
+
 `RunSpec` captures requested experiment inputs. Parameters must be an object and a supplied seed must be an integer. The runner makes a JSON copy of parameters before creating the record.
 
 ::: gitinject.run_record.RunSpec

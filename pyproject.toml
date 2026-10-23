@@ -67,6 +67,7 @@ packages = ["src/gitinject"]
 only-include = [
     "src/gitinject",
     "research/scenarios",
+    "examples/experiments",
     "tests",
     "scripts",
     "docs",

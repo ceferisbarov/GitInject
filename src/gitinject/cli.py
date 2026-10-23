@@ -3,6 +3,7 @@ import os
 
 import click
 
+from .experiments.cli import install_cli
 from .resources import dataset_dir
 
 
@@ -763,6 +764,8 @@ def scan(
                 + click.style(f"confirmed: {s['confirmed']}", fg=status_color)
             )
 
+
+install_cli(cli)
 
 if __name__ == "__main__":
     cli()
